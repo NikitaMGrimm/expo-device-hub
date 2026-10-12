@@ -54,6 +54,12 @@ describe("resolveSdkRoot", () => {
     expect(resolveSdkRoot({}, HOME, "linux", EMPTY)).toBe("/Users/test/Android/Sdk");
   });
 
+  test("finds a lowercase Linux SDK folder", () => {
+    expect(resolveSdkRoot({}, HOME, "linux", onlyFiles("/Users/test/Android/sdk"))).toBe(
+      "/Users/test/Android/sdk",
+    );
+  });
+
   test("ignores empty / whitespace env values", () => {
     const env = { ANDROID_HOME: "   ", ANDROID_SDK_ROOT: "" };
     expect(resolveSdkRoot(env, HOME, "darwin", EMPTY)).toBe("/Users/test/Library/Android/sdk");

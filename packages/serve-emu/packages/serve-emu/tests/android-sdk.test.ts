@@ -92,14 +92,15 @@ describe("androidSdkRoots", () => {
   });
 
   test("uses Android Studio's default folder for each platform", () => {
-    const defaultRoot = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
-      androidSdkRoots(lookup(env, {}, platform)).at(-1)?.path;
-    expect(defaultRoot({}, "darwin")).toBe("/Users/test/Library/Android/sdk");
-    expect(defaultRoot({}, "linux")).toBe("/Users/test/Android/Sdk");
-    expect(defaultRoot({ LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local" }, "win32")).toBe(
+    const defaultRoots = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
+      androidSdkRoots(lookup(env, {}, platform)).map((root) => root.path);
+    expect(defaultRoots({}, "darwin")).toEqual(["/Users/test/Library/Android/sdk"]);
+    // Linux paths are case-sensitive, and tools disagree on the case.
+    expect(defaultRoots({}, "linux")).toEqual(["/Users/test/Android/Sdk", "/Users/test/Android/sdk"]);
+    expect(defaultRoots({ LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local" }, "win32")).toEqual([
       "C:\\Users\\test\\AppData\\Local\\Android\\Sdk",
-    );
-    expect(defaultRoot({}, "win32")).toBe("\\Users\\test\\AppData\\Local\\Android\\Sdk");
+    ]);
+    expect(defaultRoots({}, "win32")).toEqual(["\\Users\\test\\AppData\\Local\\Android\\Sdk"]);
   });
 
   test("reads the Windows PATH with its own separator and file names", () => {

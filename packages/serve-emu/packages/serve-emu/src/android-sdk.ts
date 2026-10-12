@@ -35,7 +35,8 @@ export const ANDROID_SDK_HINT = "Set ANDROID_HOME to your Android SDK folder.";
  *
  * 1. `ANDROID_HOME`, then the deprecated `ANDROID_SDK_ROOT`.
  * 2. The SDK that holds the `adb` or `emulator` found on PATH, after symlinks.
- * 3. Android Studio's default folder for the platform.
+ * 3. Android Studio's default folder for the platform. Linux checks `Sdk` and
+ *    `sdk`, because its paths are case-sensitive and tools disagree on the case.
  *
  * The roots are not checked: a caller looks for its tool in each one, in order.
  */
@@ -53,7 +54,9 @@ export function androidSdkRoots(lookup: AndroidSdkLookup = {}): AndroidSdkRoot[]
   add(env.ANDROID_HOME, "ANDROID_HOME");
   add(env.ANDROID_SDK_ROOT, "ANDROID_SDK_ROOT");
   for (const root of sdkRootsOnPath(env, platform, lookup)) add(root.path, root.source);
-  add(defaultSdkRoot(env, platform, lookup.homeDir ?? homedir()), "default location");
+  for (const path of defaultSdkRoots(env, platform, lookup.homeDir ?? homedir())) {
+    add(path, "default location");
+  }
   return roots;
 }
 
@@ -105,11 +108,16 @@ function resolveLink(realpath: (path: string) => string, file: string): string {
 }
 
 /** Where Android Studio installs the SDK when the user accepts its default. */
-function defaultSdkRoot(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, homeDir: string): string {
-  if (platform === "darwin") return posix.join(homeDir, "Library", "Android", "sdk");
+function defaultSdkRoots(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+  homeDir: string,
+): string[] {
+  if (platform === "darwin") return [posix.join(homeDir, "Library", "Android", "sdk")];
   if (platform === "win32") {
     const localAppData = env.LOCALAPPDATA?.trim() || win32.join(homeDir, "AppData", "Local");
-    return win32.join(localAppData, "Android", "Sdk");
+    return [win32.join(localAppData, "Android", "Sdk")];
   }
-  return posix.join(homeDir, "Android", "Sdk");
+  // eas-cli uses `Sdk`, Expo CLI uses `sdk`.
+  return [posix.join(homeDir, "Android", "Sdk"), posix.join(homeDir, "Android", "sdk")];
 }

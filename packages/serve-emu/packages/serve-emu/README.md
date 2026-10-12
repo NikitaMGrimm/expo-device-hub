@@ -59,7 +59,7 @@ Planned:
 - Android SDK Build-Tools for app icons (`aapt2`). serve-emu looks for the SDK in
   `ANDROID_HOME`, then `ANDROID_SDK_ROOT`, then the SDK that holds `adb` or `emulator`
   on PATH, then Android Studio's default folder (`~/Library/Android/sdk` on macOS,
-  `~/Android/Sdk` on Linux, `%LOCALAPPDATA%\Android\Sdk` on Windows)
+  `~/Android/Sdk` or `~/Android/sdk` on Linux, `%LOCALAPPDATA%\Android\Sdk` on Windows)
 - A booted device/emulator from `adb devices`, or an AVD name passed with `--avd`
 - A modern browser with H.264 WebRTC support or WebCodecs; MSE is used when WebCodecs is unavailable
 - `ffmpeg` with `libx264` when using `--stream-mode grpc-screenshot` (the default software encoder)
