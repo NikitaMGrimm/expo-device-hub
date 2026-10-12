@@ -15,9 +15,13 @@ export type SdkFileSystem = Pick<AndroidSdkLookup, "existsSync" | "realpathSync"
 
 /**
  * The device list polls every 500 ms and resolves two tools each time. The
- * roots come from a PATH scan, so they are kept until an input changes.
+ * roots come from a PATH scan, so they are kept until an input changes or this
+ * much time passes. The time limit finds an SDK installed into a folder that
+ * is already on PATH.
  */
-let sdkRootsCache: { key: string; roots: AndroidSdkRoot[] } | null = null;
+const SDK_ROOTS_CACHE_MS = 10_000;
+
+let sdkRootsCache: { key: string; roots: AndroidSdkRoot[]; expiresAt: number } | null = null;
 
 /** Forget the cached SDK roots, for tests. */
 export function clearSdkRootsCache(): void {
@@ -148,8 +152,13 @@ function sdkRoots(
     homeDir,
     platform,
   ].join("\0");
-  if (sdkRootsCache?.key !== key) {
-    sdkRootsCache = { key, roots: androidSdkRoots({ env, homeDir, platform, ...fileSystem }) };
+  const now = Date.now();
+  if (sdkRootsCache?.key !== key || now >= sdkRootsCache.expiresAt) {
+    sdkRootsCache = {
+      key,
+      roots: androidSdkRoots({ env, homeDir, platform, ...fileSystem }),
+      expiresAt: now + SDK_ROOTS_CACHE_MS,
+    };
   }
   return sdkRootsCache.roots;
 }

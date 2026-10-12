@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import {
   adbPath,
   avdmanagerPath,
@@ -22,7 +22,10 @@ function onlyFiles(...files: string[]): SdkFileSystem {
 
 const EMPTY = onlyFiles();
 
-afterEach(() => clearSdkRootsCache());
+afterEach(() => {
+  clearSdkRootsCache();
+  setSystemTime();
+});
 
 describe("resolveSdkRoot", () => {
   test("prefers ANDROID_HOME", () => {
@@ -112,6 +115,30 @@ describe("tool resolution", () => {
       "/opt/bin/adb",
       "/opt/bin/emulator",
     ]);
+  });
+
+  test("finds an SDK installed into a PATH folder after the cache expires", () => {
+    const files: string[] = [];
+    const fileSystem: SdkFileSystem = {
+      existsSync: (path) => files.includes(path),
+      realpathSync: (path) => (path === "/opt/bin/adb" ? "/opt/android/platform-tools/adb" : path),
+    };
+    const env = { PATH: "/opt/bin" };
+    setSystemTime(new Date("2026-10-13T00:00:00Z"));
+    expect(resolveAdbPath(env, HOME, "darwin", fileSystem)).toBe(
+      "/Users/test/Library/Android/sdk/platform-tools/adb",
+    );
+
+    files.push("/opt/bin/adb", "/opt/android/platform-tools/adb");
+    setSystemTime(new Date("2026-10-13T00:00:09Z"));
+    expect(resolveAdbPath(env, HOME, "darwin", fileSystem)).toBe(
+      "/Users/test/Library/Android/sdk/platform-tools/adb",
+    );
+
+    setSystemTime(new Date("2026-10-13T00:00:10Z"));
+    expect(resolveAdbPath(env, HOME, "darwin", fileSystem)).toBe(
+      "/opt/android/platform-tools/adb",
+    );
   });
 
   test("keeps the first SDK's path when no SDK has the tool", () => {
