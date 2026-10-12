@@ -1,32 +1,35 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { androidExecutable, androidSdkRoots, type AndroidSdkLookup } from "./android-sdk";
 
-const DEFAULT_SDK_SUBPATH = "Library/Android/sdk";
 const AVDMANAGER_SUBPATH = "cmdline-tools/latest/bin/avdmanager";
 const SDKMANAGER_SUBPATH = "cmdline-tools/latest/bin/sdkmanager";
-const EMULATOR_SUBPATH = "emulator/emulator";
-const ADB_SUBPATH = "platform-tools/adb";
+
+/** Test seams for the file system checks behind the `resolve*` functions. */
+export type SdkFileSystem = Pick<AndroidSdkLookup, "existsSync" | "realpathSync">;
 
 /**
  * Resolve the Android SDK root from the environment.
  *
- * Prefers `ANDROID_HOME`, then the deprecated `ANDROID_SDK_ROOT`, and finally
- * the default macOS location under the user's home directory.
+ * Returns the first of {@link androidSdkRoots} that exists: `ANDROID_HOME`,
+ * the deprecated `ANDROID_SDK_ROOT`, the SDK that holds `adb` or `emulator`
+ * on PATH, and Android Studio's default folder for the platform. When none
+ * exists, returns the first candidate, so the error names the expected path.
  */
-export function resolveSdkRoot(env: NodeJS.ProcessEnv, homeDir: string): string {
-  const androidHome = nonEmpty(env.ANDROID_HOME);
-  if (androidHome) return androidHome;
-
-  const sdkRoot = nonEmpty(env.ANDROID_SDK_ROOT);
-  if (sdkRoot) return sdkRoot;
-
-  return join(homeDir, DEFAULT_SDK_SUBPATH);
+export function resolveSdkRoot(
+  env: NodeJS.ProcessEnv,
+  homeDir: string,
+  platform: NodeJS.Platform = process.platform,
+  fileSystem: SdkFileSystem = {},
+): string {
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root) => root);
 }
 
 /**
  * Build the absolute path to the `avdmanager` wrapper inside an SDK root.
  *
  * The cmdline-tools ship as `.bat` wrappers on Windows. `adb` and `emulator`
- * need no such suffix: Windows resolves a missing `.exe` on its own.
+ * carry `.exe`, which the `resolve*` functions need to see that they exist.
  */
 export function avdmanagerPath(
   sdkRoot: string,
@@ -40,8 +43,11 @@ export function resolveAvdmanagerPath(
   env: NodeJS.ProcessEnv,
   homeDir: string,
   platform: NodeJS.Platform = process.platform,
+  fileSystem: SdkFileSystem = {},
 ): string {
-  return avdmanagerPath(resolveSdkRoot(env, homeDir), platform);
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root) =>
+    avdmanagerPath(root, platform),
+  );
 }
 
 /** Build the absolute path to the `sdkmanager` wrapper inside an SDK root. */
@@ -57,37 +63,63 @@ export function resolveSdkmanagerPath(
   env: NodeJS.ProcessEnv,
   homeDir: string,
   platform: NodeJS.Platform = process.platform,
+  fileSystem: SdkFileSystem = {},
 ): string {
-  return sdkmanagerPath(resolveSdkRoot(env, homeDir), platform);
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root) =>
+    sdkmanagerPath(root, platform),
+  );
 }
 
 /** Build the absolute path to the `emulator` binary inside an SDK root. */
-export function emulatorPath(sdkRoot: string): string {
-  return join(sdkRoot, EMULATOR_SUBPATH);
+export function emulatorPath(sdkRoot: string, platform: NodeJS.Platform = process.platform): string {
+  return join(sdkRoot, "emulator", androidExecutable("emulator", platform));
 }
 
 /** Resolve the `emulator` path directly from the environment. */
-export function resolveEmulatorPath(env: NodeJS.ProcessEnv, homeDir: string): string {
-  return emulatorPath(resolveSdkRoot(env, homeDir));
+export function resolveEmulatorPath(
+  env: NodeJS.ProcessEnv,
+  homeDir: string,
+  platform: NodeJS.Platform = process.platform,
+  fileSystem: SdkFileSystem = {},
+): string {
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root) => emulatorPath(root, platform));
 }
 
 /** Build the absolute path to the `adb` binary inside an SDK root. */
-export function adbPath(sdkRoot: string): string {
-  return join(sdkRoot, ADB_SUBPATH);
+export function adbPath(sdkRoot: string, platform: NodeJS.Platform = process.platform): string {
+  return join(sdkRoot, "platform-tools", androidExecutable("adb", platform));
 }
 
 /** Resolve the `adb` path directly from the environment. */
-export function resolveAdbPath(env: NodeJS.ProcessEnv, homeDir: string): string {
-  return adbPath(resolveSdkRoot(env, homeDir));
+export function resolveAdbPath(
+  env: NodeJS.ProcessEnv,
+  homeDir: string,
+  platform: NodeJS.Platform = process.platform,
+  fileSystem: SdkFileSystem = {},
+): string {
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root) => adbPath(root, platform));
+}
+
+/**
+ * Return `toolPath` in the first SDK root where it exists, or in the first
+ * root when it exists in none. Each tool looks on its own, because a partial
+ * SDK in `ANDROID_HOME` may lack a tool that Android Studio's SDK has.
+ */
+function resolveInSdk(
+  env: NodeJS.ProcessEnv,
+  homeDir: string,
+  platform: NodeJS.Platform,
+  fileSystem: SdkFileSystem,
+  toolPath: (sdkRoot: string) => string,
+): string {
+  const exists = fileSystem.existsSync ?? existsSync;
+  const paths = androidSdkRoots({ env, homeDir, platform, ...fileSystem }).map((root) =>
+    toolPath(root.path),
+  );
+  // androidSdkRoots always ends with the platform's default folder.
+  return paths.find((path) => exists(path)) ?? paths[0]!;
 }
 
 function cmdlineTool(subpath: string, platform: NodeJS.Platform): string {
   return platform === "win32" ? `${subpath}.bat` : subpath;
-}
-
-function nonEmpty(value: string | undefined): string | null {
-  if (!value) return null;
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }
