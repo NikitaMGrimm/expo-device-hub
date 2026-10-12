@@ -1,12 +1,28 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { androidExecutable, androidSdkRoots, type AndroidSdkLookup } from "./android-sdk";
+import {
+  androidExecutable,
+  androidSdkRoots,
+  type AndroidSdkLookup,
+  type AndroidSdkRoot,
+} from "./android-sdk";
 
 const AVDMANAGER_SUBPATH = "cmdline-tools/latest/bin/avdmanager";
 const SDKMANAGER_SUBPATH = "cmdline-tools/latest/bin/sdkmanager";
 
 /** Test seams for the file system checks behind the `resolve*` functions. */
 export type SdkFileSystem = Pick<AndroidSdkLookup, "existsSync" | "realpathSync">;
+
+/**
+ * The device list polls every 500 ms and resolves two tools each time. The
+ * roots come from a PATH scan, so they are kept until an input changes.
+ */
+let sdkRootsCache: { key: string; roots: AndroidSdkRoot[] } | null = null;
+
+/** Forget the cached SDK roots, for tests. */
+export function clearSdkRootsCache(): void {
+  sdkRootsCache = null;
+}
 
 /**
  * Resolve the Android SDK root from the environment.
@@ -113,11 +129,29 @@ function resolveInSdk(
   toolPath: (sdkRoot: string) => string,
 ): string {
   const exists = fileSystem.existsSync ?? existsSync;
-  const paths = androidSdkRoots({ env, homeDir, platform, ...fileSystem }).map((root) =>
-    toolPath(root.path),
-  );
+  const paths = sdkRoots(env, homeDir, platform, fileSystem).map((root) => toolPath(root.path));
   // androidSdkRoots always ends with the platform's default folder.
   return paths.find((path) => exists(path)) ?? paths[0]!;
+}
+
+function sdkRoots(
+  env: NodeJS.ProcessEnv,
+  homeDir: string,
+  platform: NodeJS.Platform,
+  fileSystem: SdkFileSystem,
+): AndroidSdkRoot[] {
+  const key = [
+    env.ANDROID_HOME,
+    env.ANDROID_SDK_ROOT,
+    env.PATH ?? env.Path,
+    env.LOCALAPPDATA,
+    homeDir,
+    platform,
+  ].join("\0");
+  if (sdkRootsCache?.key !== key) {
+    sdkRootsCache = { key, roots: androidSdkRoots({ env, homeDir, platform, ...fileSystem }) };
+  }
+  return sdkRootsCache.roots;
 }
 
 function cmdlineTool(subpath: string, platform: NodeJS.Platform): string {

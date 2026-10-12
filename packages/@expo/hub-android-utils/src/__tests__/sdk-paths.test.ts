@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   adbPath,
   avdmanagerPath,
+  clearSdkRootsCache,
   emulatorPath,
   resolveAdbPath,
   resolveAvdmanagerPath,
@@ -20,6 +21,8 @@ function onlyFiles(...files: string[]): SdkFileSystem {
 }
 
 const EMPTY = onlyFiles();
+
+afterEach(() => clearSdkRootsCache());
 
 describe("resolveSdkRoot", () => {
   test("prefers ANDROID_HOME", () => {
@@ -85,6 +88,30 @@ describe("tool resolution", () => {
     expect(resolveEmulatorPath(env, HOME, "darwin", fileSystem)).toBe(
       "/Users/test/Library/Android/sdk/emulator/emulator",
     );
+  });
+
+  test("scans PATH once while the environment stays the same", () => {
+    const checked: string[] = [];
+    const fileSystem: SdkFileSystem = {
+      existsSync: (path) => {
+        checked.push(path);
+        return false;
+      },
+      realpathSync: (path) => path,
+    };
+    const env = { PATH: "/usr/bin" };
+    resolveAdbPath(env, HOME, "darwin", fileSystem);
+    resolveAvdmanagerPath(env, HOME, "darwin", fileSystem);
+    expect(checked.filter((path) => path.startsWith("/usr/bin/"))).toEqual([
+      "/usr/bin/adb",
+      "/usr/bin/emulator",
+    ]);
+
+    resolveAdbPath({ PATH: "/opt/bin" }, HOME, "darwin", fileSystem);
+    expect(checked.filter((path) => path.startsWith("/opt/bin/"))).toEqual([
+      "/opt/bin/adb",
+      "/opt/bin/emulator",
+    ]);
   });
 
   test("keeps the first SDK's path when no SDK has the tool", () => {
