@@ -21,7 +21,7 @@ export type SdkFileSystem = Pick<AndroidSdkLookup, "existsSync" | "realpathSync"
  */
 const SDK_ROOTS_CACHE_MS = 10_000;
 
-let sdkRootsCache: { key: string; roots: AndroidSdkRoot[]; expiresAt: number } | null = null;
+let sdkRootsCache: { key: string; roots: AndroidSdkRoot[]; scannedAt: number } | null = null;
 
 /** Forget the cached SDK roots, for tests. */
 export function clearSdkRootsCache(): void {
@@ -153,11 +153,13 @@ function sdkRoots(
     platform,
   ].join("\0");
   const now = Date.now();
-  if (sdkRootsCache?.key !== key || now >= sdkRootsCache.expiresAt) {
+  // A clock set back makes the age negative, which also rescans.
+  const age = sdkRootsCache ? now - sdkRootsCache.scannedAt : 0;
+  if (sdkRootsCache?.key !== key || age < 0 || age >= SDK_ROOTS_CACHE_MS) {
     sdkRootsCache = {
       key,
       roots: androidSdkRoots({ env, homeDir, platform, ...fileSystem }),
-      expiresAt: now + SDK_ROOTS_CACHE_MS,
+      scannedAt: now,
     };
   }
   return sdkRootsCache.roots;

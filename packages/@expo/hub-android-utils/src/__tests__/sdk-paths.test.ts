@@ -141,6 +141,23 @@ describe("tool resolution", () => {
     );
   });
 
+  test("rescans when the clock moves back", () => {
+    const files: string[] = [];
+    const fileSystem: SdkFileSystem = {
+      existsSync: (path) => files.includes(path),
+      realpathSync: (path) => path,
+    };
+    const env = { PATH: "/opt/android/platform-tools" };
+    setSystemTime(new Date("2026-10-13T12:00:00Z"));
+    resolveAdbPath(env, HOME, "darwin", fileSystem);
+
+    files.push("/opt/android/platform-tools/adb");
+    setSystemTime(new Date("2026-10-13T11:00:00Z"));
+    expect(resolveAdbPath(env, HOME, "darwin", fileSystem)).toBe(
+      "/opt/android/platform-tools/adb",
+    );
+  });
+
   test("keeps the first SDK's path when no SDK has the tool", () => {
     expect(resolveAvdmanagerPath({ ANDROID_HOME: "/sdk/home" }, HOME, "darwin", EMPTY)).toBe(
       "/sdk/home/cmdline-tools/latest/bin/avdmanager",
