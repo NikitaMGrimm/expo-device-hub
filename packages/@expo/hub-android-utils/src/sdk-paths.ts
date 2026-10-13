@@ -129,11 +129,12 @@ function resolveInSdk(
   env: NodeJS.ProcessEnv,
   homeDir: string,
   platform: NodeJS.Platform,
-  fileSystem: SdkFileSystem,
+  { existsSync: exists = existsSync, realpathSync }: SdkFileSystem,
   toolPath: (sdkRoot: string) => string,
 ): string {
-  const exists = fileSystem.existsSync ?? existsSync;
-  const paths = sdkRoots(env, homeDir, platform, fileSystem).map((root) => toolPath(root.path));
+  const paths = sdkRoots(env, homeDir, platform, { existsSync: exists, realpathSync }).map((root) =>
+    toolPath(root.path),
+  );
   // androidSdkRoots always ends with the platform's default folder.
   return paths.find((path) => exists(path)) ?? paths[0]!;
 }

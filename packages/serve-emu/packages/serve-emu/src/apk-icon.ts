@@ -159,14 +159,15 @@ export interface Aapt2LookupDependencies {
  * Find `aapt2` in the newest build-tools of each candidate SDK root, then on
  * PATH. build-tools is rarely on PATH, so the SDK roots carry most setups.
  */
-export async function findAapt2(dependencies: Aapt2LookupDependencies = {}): Promise<string> {
-  const list = dependencies.readdir ?? readdir;
-  const check = dependencies.access ?? access;
-  const runExec = dependencies.execText ?? execText;
-  const platform = dependencies.sdk?.platform;
-  const executable = androidExecutable("aapt2", platform);
+export async function findAapt2({
+  sdk,
+  readdir: list = readdir,
+  access: check = access,
+  execText: runExec = execText,
+}: Aapt2LookupDependencies = {}): Promise<string> {
+  const executable = androidExecutable("aapt2", sdk?.platform);
 
-  const roots = androidSdkRoots(dependencies.sdk);
+  const roots = androidSdkRoots(sdk);
   for (const root of roots) {
     const buildTools = join(root.path, "build-tools");
     const versions = (await list(buildTools).catch(() => [])).sort(compareVersions);

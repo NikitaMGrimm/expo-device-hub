@@ -40,9 +40,13 @@ export const ANDROID_SDK_HINT = "Set ANDROID_HOME to your Android SDK folder.";
  *
  * The roots are not checked: a caller looks for its tool in each one, in order.
  */
-export function androidSdkRoots(lookup: AndroidSdkLookup = {}): AndroidSdkRoot[] {
-  const env = lookup.env ?? process.env;
-  const platform = lookup.platform ?? process.platform;
+export function androidSdkRoots({
+  env = process.env,
+  platform = process.platform,
+  homeDir = homedir(),
+  existsSync: exists = existsSync,
+  realpathSync: realpath = realpathSync,
+}: AndroidSdkLookup = {}): AndroidSdkRoot[] {
   const roots: AndroidSdkRoot[] = [];
   const add = (path: string | undefined, source: string) => {
     const trimmed = path?.trim();
@@ -53,8 +57,8 @@ export function androidSdkRoots(lookup: AndroidSdkLookup = {}): AndroidSdkRoot[]
 
   add(env.ANDROID_HOME, "ANDROID_HOME");
   add(env.ANDROID_SDK_ROOT, "ANDROID_SDK_ROOT");
-  for (const root of sdkRootsOnPath(env, platform, lookup)) add(root.path, root.source);
-  for (const path of defaultSdkRoots(env, platform, lookup.homeDir ?? homedir())) {
+  for (const root of sdkRootsOnPath(env, platform, exists, realpath)) add(root.path, root.source);
+  for (const path of defaultSdkRoots(env, platform, homeDir)) {
     add(path, "default location");
   }
   return roots;
@@ -76,11 +80,10 @@ export function describeAndroidSdkRoots(roots: readonly AndroidSdkRoot[]): strin
 function sdkRootsOnPath(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
-  lookup: AndroidSdkLookup,
+  exists: (path: string) => boolean,
+  realpath: (path: string) => string,
 ): AndroidSdkRoot[] {
   const path = platform === "win32" ? win32 : posix;
-  const exists = lookup.existsSync ?? existsSync;
-  const realpath = lookup.realpathSync ?? realpathSync;
   const directories = (env.PATH ?? env.Path ?? "").split(path.delimiter).filter(Boolean);
 
   const roots: AndroidSdkRoot[] = [];
