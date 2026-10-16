@@ -163,6 +163,7 @@ export function StreamPanel({
               onRotate={() => client.rotate()}
               onSave={captureScreenshot}
               clipboard={client.capabilities.clipboard}
+              clipboardPending={client.clipboardPending}
               onPaste={() => void clipboard.pasteFromDevice()}
               onCopy={() => void clipboard.copyFromSimulator()}
             />

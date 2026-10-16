@@ -84,6 +84,26 @@ describe('StreamControls', () => {
     expect([...markup.matchAll(/<div style="[^"]*border-radius:var\(--expo-radius-xl\)[^"]*"/g)]).toHaveLength(3);
   });
 
+  test.each(['paste', 'copy'] as const)('disables both clipboard buttons while %s is pending', (pending) => {
+    const markup = renderToStaticMarkup(
+      <StreamControls
+        appearance="light"
+        onToggleAppearance={() => {}}
+        clipboard={{ paste: true, copy: true }}
+        clipboardPending={pending}
+      />,
+    );
+    for (const tag of buttonTags(markup)) {
+      if (tag.includes('aria-label="Copy from Simulator"') || tag.includes('aria-label="Paste from Device"')) {
+        expect(tag).toContain('disabled=""');
+        expect(tag).toContain('cursor:not-allowed');
+        expect(tag).toContain('color:var(--expo-theme-text-tertiary)');
+      } else {
+        expect(tag).not.toContain('disabled');
+      }
+    }
+  });
+
   test('shows every label as a tooltip above its button and exposes Theme as a switch', () => {
     const markup = renderToStaticMarkup(
       <StreamControls appearance="dark" onToggleAppearance={() => {}} />
@@ -117,11 +137,11 @@ describe('StreamPanel', () => {
       supported: true,
       deviceFrame: 'ios:iphone-17-pro',
     };
-    const toolbar = (clipboard: DeviceClient['capabilities']['clipboard']) =>
+    const toolbar = (clipboard: DeviceClient['capabilities']['clipboard'], clipboardPending: DeviceClient['clipboardPending'] = null) =>
       renderToStaticMarkup(
         <StreamPanel
           device={device}
-          client={{ status: 'streaming', capabilities: { clipboard } } as DeviceClient}
+          client={{ status: 'streaming', capabilities: { clipboard }, clipboardPending } as DeviceClient}
           DeviceScreen={() => null}
           displayScreen={() => null}
         />,
@@ -130,6 +150,14 @@ describe('StreamPanel', () => {
     expect(toolbar({ paste: true, copy: false })).toContain('aria-label="Paste from Device"');
     expect(toolbar({ paste: true, copy: false })).not.toContain('aria-label="Copy from Simulator"');
     expect(toolbar(false)).not.toContain('aria-label="Paste from Device"');
+    for (const pending of ['paste', 'copy'] as const) {
+      const buttons = buttonTags(toolbar({ paste: true, copy: true }, pending));
+      expect(buttons.find((tag) => tag.includes('aria-label="Copy from Simulator"'))).toContain('disabled=""');
+      expect(buttons.find((tag) => tag.includes('aria-label="Paste from Device"'))).toContain('disabled=""');
+    }
+    const idle = buttonTags(toolbar({ paste: true, copy: true }));
+    expect(idle.find((tag) => tag.includes('aria-label="Copy from Simulator"'))).not.toContain('disabled');
+    expect(idle.find((tag) => tag.includes('aria-label="Paste from Device"'))).not.toContain('disabled');
   });
 
   test('gives DeviceScreen a pasteText that reports Command+V through the clipboard toasts', async () => {

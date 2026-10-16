@@ -2,6 +2,7 @@ import { type ReactNode } from 'react';
 
 import {
   areRecordingControlsLocked,
+  type DeviceClipboardAction,
   type DeviceClipboardCapabilities,
   type DeviceScreenRecordingStatus,
 } from '@expo/hub-client';
@@ -72,6 +73,7 @@ export function StreamControls({
   onSave,
   recording = null,
   clipboard = false,
+  clipboardPending = null,
   onPaste,
   onCopy,
 }: {
@@ -92,6 +94,8 @@ export function StreamControls({
   recording?: DeviceScreenRecordingStatus | null;
   /** The clipboard actions the device offers. Each one shows only when the device has it. */
   clipboard?: DeviceClipboardCapabilities;
+  /** Disable both clipboard actions while either is in flight. */
+  clipboardPending?: DeviceClipboardAction | null;
   /** Paste the browser clipboard into the device app. */
   onPaste?: () => void;
   /** Copy the text selected in the device app to the browser clipboard. */
@@ -99,6 +103,7 @@ export function StreamControls({
 }) {
   const recordingControlsLocked = areRecordingControlsLocked(recording);
   const themeDisabled = appearanceDisabled || appearance === null;
+  const clipboardDisabled = clipboardPending !== null;
   return (
     <div
       role="toolbar"
@@ -143,14 +148,18 @@ export function StreamControls({
             <ControlButton
               icon={<CopyIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
               label="Copy from Simulator"
-              onClick={onCopy}
+              disabled={clipboardDisabled}
+              onClick={clipboardDisabled ? undefined : onCopy}
+              style={clipboardDisabled ? { color: text.tertiary, cursor: 'not-allowed' } : undefined}
             />
           )}
           {clipboard.paste && (
             <ControlButton
               icon={<ClipboardPasteIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
               label="Paste from Device"
-              onClick={onPaste}
+              disabled={clipboardDisabled}
+              onClick={clipboardDisabled ? undefined : onPaste}
+              style={clipboardDisabled ? { color: text.tertiary, cursor: 'not-allowed' } : undefined}
             />
           )}
         </ControlGroup>
