@@ -1,6 +1,8 @@
-import { expect, test } from 'bun:test';
+import { afterEach, expect, jest, test } from 'bun:test';
 
 import { createOrderedKeyboardInput, INPUT_DISCONNECTED_MESSAGE } from '../ordered-keyboard-input';
+
+afterEach(() => jest.useRealTimers());
 
 const decoder = new TextDecoder();
 
@@ -214,4 +216,58 @@ test('a request without a reply times out and lets later keys through', async ()
   input.send(key('down', 4));
   await expect(pasted).rejects.toThrow('Paste timed out.');
   expect(wire.at(-1)).toEqual({ tag: 0x06, payload: key('down', 4) });
+});
+
+test.each(['paste', 'copy'] as const)('%s timeout releases later input without replaying the request', async (action) => {
+  jest.useFakeTimers();
+  const { input, wire } = setup();
+  let reads = 0;
+  const first = action === 'paste' ? input.paste('first') : input.readAfterInput(async () => { reads++; return 'first'; });
+  const failure = first.catch((error: Error) => error.message);
+  input.send(key('down', 4));
+  const second = input.paste('second');
+  input.send(key('down', 5));
+  expect(wire).toHaveLength(1);
+  jest.advanceTimersByTime(149_999);
+  expect(wire).toHaveLength(1);
+  jest.advanceTimersByTime(1);
+  expect(await failure).toBe(action === 'paste' ? 'Paste timed out.' : 'Copy timed out.');
+  expect(wire.slice(1)).toEqual([
+    { tag: 0x06, payload: key('down', 4) },
+    { tag: 0x12, payload: { requestId: 2, text: 'second' } },
+  ]);
+  input.receive(frame(action === 'paste' ? 0x92 : 0x91, { requestId: 1, ok: true }));
+  expect(reads).toBe(0);
+  expect(wire).toHaveLength(3);
+  input.receive(frame(0x92, { requestId: 2, ok: true }));
+  expect(await second).toEqual({});
+  expect(wire.at(-1)).toEqual({ tag: 0x06, payload: key('down', 5) });
+  input.dispose();
+});
+
+test('Copy timeout aborts an acknowledged read and ignores its late result', async () => {
+  jest.useFakeTimers();
+  const { input, wire } = setup();
+  let signal!: AbortSignal;
+  let finishRead!: (text: string) => void;
+  const copied = input.readAfterInput((value) => {
+    signal = value;
+    return new Promise<string>((resolve) => { finishRead = resolve; });
+  });
+  const failure = copied.catch((error: Error) => error.message);
+  input.receive(frame(0x91, { requestId: 1, ok: true }));
+  input.send(key('down', 4));
+  const pasted = input.paste('next');
+  input.send(key('down', 5));
+  jest.advanceTimersByTime(150_000);
+  expect(await failure).toBe('Copy timed out.');
+  expect(signal.aborted).toBe(true);
+  finishRead('late');
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(wire.map((entry) => entry.tag)).toEqual([0x11, 0x06, 0x12]);
+  input.receive(frame(0x92, { requestId: 2, ok: true }));
+  expect(await pasted).toEqual({});
+  expect(wire.at(-1)).toEqual({ tag: 0x06, payload: key('down', 5) });
+  input.dispose();
 });
