@@ -2491,11 +2491,11 @@ export function peekDeviceSession(udid: string): DeviceSession | undefined {
  * Get (lazily creating + starting) the in-process session for `udid`. Throws if
  * the device isn't booted. The session lives until `closeDeviceSession`.
  */
-export function getDeviceSession(udid: string, initialStreamSettings?: StreamSettings): DeviceSession {
+export function getDeviceSession(udid: string, initialStreamSettings?: StreamSettings, retainExisting = true): DeviceSession {
   let session = sessions.get(udid);
   if (session) {
     const owner = screenshotOwners.get(session);
-    if (owner) owner.retained = true;
+    if (owner && retainExisting) owner.retained = true;
   }
   if (!session) {
     const createdSession = new DeviceSession(udid, initialStreamSettings);
