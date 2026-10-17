@@ -1521,10 +1521,10 @@ export class DeviceSession {
           const state = observed === undefined ? {
             hingeAngle: this.hingeAngle, physicalOrientation: this.hingePhysicalOrientation,
             hingePose: this.hingePose, tableModeAvailable: isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation),
-          } : observedHingeState({ ...await this.hid.hingeControlEligibility(), tableMode: observed.tableMode });
+          } : observedHingeState(await this.hid.hingeControlEligibility());
           if (!this.canRunInputControl(generation)) throw new Error("Hinge state is unavailable");
           ws.send(Buffer.concat([Buffer.from([0x93]), Buffer.from(JSON.stringify({ ok: true, state: {
-            ...state, tableMode: this.tableMode, ...(observed ? { tableModeActive: observed.tableMode } : {}),
+            ...state, tableMode: this.tableMode, ...(observed ? { tableModeActive: state.tableMode } : {}),
           } }))]));
         });
         this.hingeControlUpdate = operation.then(() => {}, () => {});
