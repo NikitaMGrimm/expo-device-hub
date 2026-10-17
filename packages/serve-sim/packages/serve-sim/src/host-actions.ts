@@ -14,7 +14,7 @@ import {
   redactHostPaths,
 } from "./host-actions-utils";
 import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR } from "./host-paths";
-import { ScreenshotName, captureScreenshotAsync, newScreenshotName } from "./screenshot-store";
+import { ScreenshotDisplay, ScreenshotName, captureScreenshotAsync, newScreenshotName } from "./screenshot-store";
 import { approveUrlScheme, launchApp, openUrlInApp, stopApp } from "./launch-manager";
 import { CA_DEBUG_FLAGS } from "./ca-debug";
 import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";
@@ -324,7 +324,7 @@ const ACTION_SCHEMAS = {
     .object({
       udid: Device,
       fileName: ScreenshotName.optional(),
-      display: z.number().int().min(1).max(0xffff_ffff).optional(),
+      display: ScreenshotDisplay.optional(),
     })
     .meta({ description: "Take a screenshot of the active display, or the specified simctl display ID.", output: "path" }),
   "screenshot.thumbnail": z.object({ fileName: ScreenshotName }).meta({ hidden: true }),
