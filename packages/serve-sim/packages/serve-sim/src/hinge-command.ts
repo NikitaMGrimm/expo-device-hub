@@ -101,7 +101,9 @@ export async function readHingeStateFromWs(
       }
       const { hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable } =
         config.observedDeviceState === undefined ? config : observedHingeState(config.observedDeviceState);
-      finish({ hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable });
+      finish({ hingeAngle, hingePose, physicalOrientation, tableMode: config.tableMode, tableModeAvailable,
+        ...(config.observedDeviceState ? { tableModeActive: tableMode } : {}),
+      });
     });
     ws.on("error", (error) => finish(new Error(`Hinge state connection failed: ${error.message}`)));
     ws.on("close", () => finish(new Error("Connection closed before the hinge state arrived")));
