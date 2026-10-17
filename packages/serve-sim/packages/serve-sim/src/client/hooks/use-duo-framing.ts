@@ -3,7 +3,7 @@ import { hingeControlState, isHingePreviewObserved, type HingeControlCommand, ty
 import type { SimulatorOrientation, StreamConfig } from "../types";
 import { createDuoRotationState } from "../simulator/duo-rotation-state";
 import { duoPhysicalPoseChanged } from "../simulator/duo-pose";
-import { DUO_FACE_DOWN_HELD, duoFaceDownFraming, duoInitialView, duoObservedView, duoPresetView, duoRotateView, type DuoFaceDownFraming, type DuoView } from "../simulator/duo-view";
+import { DUO_FACE_DOWN_HELD, duoFaceDownFraming, duoInitialView, duoObservedView, duoPhysicalView, duoPresetView, duoRotateView, type DuoFaceDownFraming, type DuoView } from "../simulator/duo-view";
 import { rotationDegreesForOrientation } from "../simulator/orientation";
 import { recordDuoHingeCommand, type DuoHingeCommands } from "../simulator/duo-hinge-commands";
 import { createAcknowledgedControlQueue, type AcknowledgedControlReply, type AcknowledgedControlRequest } from "../utils/acknowledged-control-queue";
@@ -240,6 +240,12 @@ export function useDuoFraming(
       return;
     }
     const turns = nativeRotationRef.current.observe(orientation);
+    const baseline = nativeRotationRef.current.takeBaseline();
+    if (baseline) {
+      setDuoView(pose ? duoPresetView(pose) : duoPhysicalView(streamConfig?.hingeAngle, baseline));
+      duoViewLocalIntentRef.current = false;
+      return;
+    }
     if (!turns) return;
     // Native presets take their canonical framing. Other external turns rotate
     // the visible camera, independently of delayed app geometry.
