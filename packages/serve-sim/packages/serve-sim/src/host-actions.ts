@@ -799,6 +799,8 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSe
         let readActiveDisplay: (() => Promise<number>) | undefined;
         if (display === undefined) {
           const { getDeviceSession } = await import("./device-session");
+          const { resolveBootedDeviceAsync } = await import("./device");
+          p.udid = await resolveBootedDeviceAsync(p.udid);
           const session = getDeviceSession(p.udid, streamSettings);
           readActiveDisplay = () => session.activeScreenId();
           display = await readActiveDisplay();
