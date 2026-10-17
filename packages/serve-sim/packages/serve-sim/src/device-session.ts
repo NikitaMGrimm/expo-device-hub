@@ -42,7 +42,7 @@ import { debugKeyboard } from "./debug";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
 import { readSavedHingeState, writeSavedHingeState } from "./hinge-saved-state";
 import { validatePanelRoute } from "./panel-route";
-import { isHingeControlCommand, hingeControlState, hingePoseOrientation, isTableModeAvailable, type HingeControlCommand, type HingePose, type HingePhysicalOrientation } from "./hinge-control";
+import { isHingeControlCommand, observedHingeState, hingeControlState, hingePoseOrientation, isTableModeAvailable, type HingeControlCommand, type HingePose, type HingePhysicalOrientation } from "./hinge-control";
 import { getUiOption, refreshDeviceOptionState, setUiOption, setUiOptionIfRevision } from "./ui-settings";
 import { eventLogEventForHidMessage, formatEventLogPoint, recordEventLogEvent, updateEventLogEvent } from "./event-log";
 import { WS_MSG_CONFIG, WS_MSG_INPUT_ADMITTED, WS_REASON_INPUT_UNAVAILABLE } from "./socket/input-protocol";
@@ -1512,6 +1512,27 @@ export class DeviceSession {
         catch { /* The requester may disconnect during the native operation. */ }
         break;
       }
+      case 0x13: {
+        if (data.length !== 1) break;
+        const generation = this.inputGeneration;
+        const operation = this.hingeControlUpdate.then(async () => {
+          if (this.supportsHingeAngle !== true || !this.canRunInputControl(generation)) throw new Error("Hinge state is unavailable");
+          const observed = this.observedDeviceState;
+          const state = observed === undefined ? {
+            hingeAngle: this.hingeAngle, physicalOrientation: this.hingePhysicalOrientation,
+            hingePose: this.hingePose, tableModeAvailable: isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation),
+          } : observedHingeState({ ...await this.hid.hingeControlEligibility(), tableMode: observed.tableMode });
+          if (!this.canRunInputControl(generation)) throw new Error("Hinge state is unavailable");
+          ws.send(Buffer.concat([Buffer.from([0x93]), Buffer.from(JSON.stringify({ ok: true, state: {
+            ...state, tableMode: this.tableMode, ...(observed ? { tableModeActive: observed.tableMode } : {}),
+          } }))]));
+        });
+        this.hingeControlUpdate = operation.then(() => {}, () => {});
+        try { await operation; } catch {
+          try { ws.send(Buffer.concat([Buffer.from([0x93]), Buffer.from('{"ok":false,"error":"Hinge state is unavailable"}')])); } catch {}
+        }
+        break;
+      }
       case 0x11: {
         const requestId = data.length === 1 ? undefined : json<{ requestId?: unknown }>()?.requestId;
         if (data.length !== 1 && (typeof requestId !== "number" || !Number.isSafeInteger(requestId) || requestId <= 0)) break;
@@ -2310,6 +2331,7 @@ export class DeviceSession {
     keyboardUnavailable: boolean;
     screenId?: number;
     supportsHingeAngle?: boolean;
+    supportsHingeStateReadback?: boolean;
     supportsPhysicalOrientation?: boolean;
     hingeAngle?: number;
     hingePose?: HingePose | null;
@@ -2326,7 +2348,7 @@ export class DeviceSession {
       keyboardUnavailable: this.hid.keyboardUnavailable,
       ...(this.nativeScreen?.screenId !== undefined ? { screenId: this.nativeScreen.screenId } : {}),
       ...(this.supportsPhysicalOrientation !== undefined ? { supportsPhysicalOrientation: this.supportsPhysicalOrientation } : {}),
-      ...(this.supportsHingeAngle !== undefined ? { supportsHingeAngle: this.supportsHingeAngle } : {}),
+      ...(this.supportsHingeAngle !== undefined ? { supportsHingeAngle: this.supportsHingeAngle, supportsHingeStateReadback: this.supportsHingeAngle } : {}),
       ...(this.hingeAngle !== undefined ? { hingeAngle: this.hingeAngle } : {}),
       ...(this.supportsHingeAngle ? { hingePose: this.hingePose, tableModeAvailable: isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation) } : {}),
       ...(this.supportsHingeAngle && this.hingePhysicalOrientation !== undefined ? { physicalOrientation: this.hingePhysicalOrientation } : {}),

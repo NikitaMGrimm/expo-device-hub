@@ -50,6 +50,7 @@ export type HingeStateReport = {
   hingePose?: HingePose | null;
   physicalOrientation?: HingePhysicalOrientation;
   tableMode?: boolean;
+  tableModeActive?: boolean;
   tableModeAvailable?: boolean;
 };
 
@@ -72,15 +73,30 @@ export async function readHingeStateFromWs(
       else resolve(result);
     };
     const timeout = setTimeout(() => finish(new Error("Timed out waiting for the simulator's hinge state")), options.timeoutMs ?? 5000);
+    let requested = false;
     ws.on("message", (data) => {
       const frame = Buffer.from(data as Buffer);
-      if (frame[0] !== 0x82) return;
-      let config: HingeStateReport & { supportsHingeAngle?: boolean; observedDeviceState?: HingeStateReport };
+      if (frame[0] === 0x93 && requested) {
+        let reply: { ok?: boolean; state?: HingeStateReport; error?: string };
+        try { reply = JSON.parse(frame.subarray(1).toString()); }
+        catch { finish(new Error("Invalid hinge state reply")); return; }
+        if (reply?.ok === false) finish(new Error(reply.error || "Hinge state is unavailable"));
+        else if (reply?.ok === true && reply.state && typeof reply.state === "object" && !Array.isArray(reply.state)) finish(reply.state);
+        else finish(new Error("Invalid hinge state reply"));
+        return;
+      }
+      if (frame[0] !== 0x82 || requested) return;
+      let config: HingeStateReport & { supportsHingeAngle?: boolean; supportsHingeStateReadback?: boolean; observedDeviceState?: HingeStateReport };
       try { config = JSON.parse(frame.subarray(1).toString()); }
       catch { finish(new Error("Invalid screen config from the serve-sim server")); return; }
       if (config.supportsHingeAngle === undefined) return;
       if (!config.supportsHingeAngle) {
         finish(new Error("Hinge control is unavailable on this simulator"));
+        return;
+      }
+      if (config.supportsHingeStateReadback) {
+        requested = true;
+        ws.send(Buffer.from([0x13]));
         return;
       }
       const { hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable } =
