@@ -178,7 +178,7 @@ describe("other host tools", () => {
 describe("procedures that shell out", () => {
   it("stages the capture and leaves the Desktop copy to a child", async () => {
     const result = await runHostActionAsync(
-      { action: "screenshot.capture", params: { udid: UDID, fileName: SHOT } },
+      { action: "screenshot.capture", params: { display: 1, udid: UDID, fileName: SHOT } },
       serveSimBin,
     );
     expect(result.exitCode).toBe(0);
@@ -186,7 +186,7 @@ describe("procedures that shell out", () => {
     expect(result.stdout.trim()).toBe(STAGED);
     const runs = loggedArgv();
     expect(runs.filter((r) => r[0] === "xcrun").at(-1)).toEqual([
-      "xcrun", "simctl", "io", UDID, "screenshot", STAGED,
+      "xcrun", "simctl", "io", UDID, "screenshot", "--display=1", STAGED,
     ]);
     expect(runs.filter((r) => r[0] === "cp").at(-1)).toEqual([
       "cp", STAGED, join(homedir(), "Desktop", SHOT),
@@ -195,7 +195,7 @@ describe("procedures that shell out", () => {
 
   it("names a capture when the caller does not", async () => {
     const result = await runHostActionAsync(
-      { action: "screenshot.capture", params: { udid: UDID } },
+      { action: "screenshot.capture", params: { display: 1, udid: UDID } },
       serveSimBin,
     );
     const staged = result.stdout.trim();
@@ -206,7 +206,7 @@ describe("procedures that shell out", () => {
       /\/serve-sim-screenshot-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}-[0-9a-f]{8}\.png$/,
     );
     expect(loggedArgv().filter((r) => r[0] === "xcrun").at(-1)).toEqual([
-      "xcrun", "simctl", "io", UDID, "screenshot", staged,
+      "xcrun", "simctl", "io", UDID, "screenshot", "--display=1", staged,
     ]);
   });
 
@@ -223,7 +223,7 @@ describe("procedures that shell out", () => {
         await withShimsAsync({ cp: "#!/bin/sh\nexec sleep 600\n" }, async () => {
           const started = Date.now();
           const result = await runHostActionAsync(
-            { action: "screenshot.capture", params: { udid: UDID, fileName } },
+            { action: "screenshot.capture", params: { display: 1, udid: UDID, fileName } },
             serveSimBin,
           );
           expect(Date.now() - started).toBeLessThan(8_000);
@@ -245,7 +245,7 @@ describe("procedures that shell out", () => {
     try {
       await withShimsAsync({ cp: "#!/bin/sh\necho 'cp: Operation not permitted' >&2\nexit 1\n" }, async () => {
         const result = await runHostActionAsync(
-          { action: "screenshot.capture", params: { udid: UDID, fileName } },
+          { action: "screenshot.capture", params: { display: 1, udid: UDID, fileName } },
           serveSimBin,
         );
         expect(result.exitCode).toBe(0);
@@ -266,7 +266,7 @@ describe("procedures that shell out", () => {
     try {
       await withShimsAsync({ xcrun: "#!/bin/sh\nexit 1\n" }, async () => {
         const result = await runHostActionAsync(
-          { action: "screenshot.capture", params: { udid: UDID, fileName } },
+          { action: "screenshot.capture", params: { display: 1, udid: UDID, fileName } },
           serveSimBin,
         );
         expect(result.exitCode).not.toBe(0);
@@ -288,11 +288,11 @@ describe("procedures that shell out", () => {
     const staged = join(dirname(STAGED), fileName);
     const lock = `${staged}.lock`;
     const shim =
-      '#!/bin/sh\nsleep 0.2\nif mkdir "$5.lock" 2>/dev/null; then printf PNG > "$5"; exit 0; fi\n' +
+      '#!/bin/sh\nsleep 0.2\nif mkdir "$6.lock" 2>/dev/null; then printf PNG > "$6"; exit 0; fi\n' +
       "sleep 0.5\nexit 1\n";
     try {
       await withShimsAsync({ xcrun: shim }, async () => {
-        const request = { action: "screenshot.capture", params: { udid: UDID, fileName } };
+        const request = { action: "screenshot.capture", params: { display: 1, udid: UDID, fileName } };
         const results = await Promise.all([
           runHostActionAsync(request, serveSimBin),
           runHostActionAsync(request, serveSimBin),
