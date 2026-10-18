@@ -1,5 +1,5 @@
 import { rm, stat } from "fs/promises";
-import { join } from "path";
+import { basename, dirname, join } from "path";
 import { z } from "zod";
 import { installAppAsync } from "./app-install";
 import { AppRelativePath, runAppFileAction } from "./app-files";
@@ -12,8 +12,9 @@ import {
   ok,
   runInvocation,
   redactHostPaths,
+  actionTimeoutMs,
 } from "./host-actions-utils";
-import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR } from "./host-paths";
+import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR, UPLOAD_DIR } from "./host-paths";
 import { ScreenshotName, captureScreenshotAsync, newScreenshotName } from "./screenshot-store";
 import { approveUrlScheme, launchApp, openUrlInApp, stopApp } from "./launch-manager";
 import { CA_DEBUG_FLAGS } from "./ca-debug";
@@ -28,6 +29,7 @@ import {
   UploadId,
   appendUploadChunkAsync,
   removeUploadAsync,
+  readStagedUploadAsync,
   stagedUploadPath,
   reserveThumbnailPathAsync,
 } from "./upload-store";
@@ -686,7 +688,12 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSe
     }
     case "app.install": {
       const p = parseParams(action, raw);
-      return await installAppAsync(p.udid, fileSourcePath(p));
+      const path = fileSourcePath(p);
+      const uploadId = "uploadId" in p ? p.uploadId : dirname(path) === UPLOAD_DIR ? basename(path) : undefined;
+      const deadline = Date.now() + actionTimeoutMs();
+      // Acquire the staging queue before the install queue; neither installer acquires them in reverse.
+      return uploadId === undefined ? await installAppAsync(p.udid, path, deadline)
+        : await readStagedUploadAsync(uploadId, source => installAppAsync(p.udid, source, deadline));
     }
     case "app.launch": {
       const { udid, bundleId, launchArgs, openUrl } = parseParams(action, raw);
