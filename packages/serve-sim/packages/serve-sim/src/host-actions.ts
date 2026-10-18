@@ -29,7 +29,7 @@ import {
   UploadId,
   appendUploadChunkAsync,
   removeUploadAsync,
-  readStagedUploadAsync,
+  withStagedUploadSnapshotAsync,
   stagedUploadPath,
   reserveThumbnailPathAsync,
 } from "./upload-store";
@@ -691,9 +691,12 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSe
       const path = fileSourcePath(p);
       const uploadId = "uploadId" in p ? p.uploadId : dirname(path) === UPLOAD_DIR ? basename(path) : undefined;
       const deadline = Date.now() + actionTimeoutMs();
-      // Acquire the staging queue before the install queue; neither installer acquires them in reverse.
-      return uploadId === undefined ? await installAppAsync(p.udid, path, deadline)
-        : await readStagedUploadAsync(uploadId, source => installAppAsync(p.udid, source, deadline));
+      try {
+        return uploadId === undefined ? await installAppAsync(p.udid, path, deadline)
+          : await withStagedUploadSnapshotAsync(uploadId, source => installAppAsync(p.udid, source, deadline));
+      } catch (error) {
+        return { stdout: "", stderr: redactHostPaths(error instanceof Error ? error.message : String(error)), exitCode: 1 };
+      }
     }
     case "app.launch": {
       const { udid, bundleId, launchArgs, openUrl } = parseParams(action, raw);
