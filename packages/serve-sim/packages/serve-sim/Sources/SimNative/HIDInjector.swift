@@ -110,7 +110,10 @@ actor HIDInjector {
             } catch {
                 // Older host frameworks/runtimes may not expose these capabilities.
                 // Duo cannot fall back: its inner legacy service is disconnected.
-                if isFoldable { throw error }
+                // A digitizer without the keyboard service means CoreDevice owns guest
+                // input but cannot start delivery; legacy sends would be acknowledged
+                // and dropped, so report input as unavailable instead.
+                if isFoldable || (error as NSError).code == Self.keyboardServiceUnavailable { throw error }
                 digitizerCapability = nil
                 keyboardCapability = nil
                 hidLog("[hid] CoreDevice HID unavailable; using legacy input: \(error)")
@@ -180,6 +183,8 @@ actor HIDInjector {
         hidLog("[hid] IndigoHIDMessageForMouseNSEvent loaded (with edge gesture support)")
     }
 
+    private static let keyboardServiceUnavailable = 9
+
     private func setupCoreDeviceHID(deviceUDID: String) async throws {
         // Duo keeps its existing requirement for both transports. Ordinary iOS
         // touch must remain usable when only the optional keyboard is missing.
@@ -214,8 +219,12 @@ actor HIDInjector {
                 break
             } catch {
                 if attempt == 9 {
-                    // Without the keyboard service, guest HID delivery may never start, so
-                    // CoreDevice touches could vanish. Fail setup; ordinary iOS uses legacy input.
+                    if transport == "keyboard" {
+                        // Opening this service starts guest HID delivery; without it no input arrives.
+                        throw NSError(domain: "HIDInjector", code: Self.keyboardServiceUnavailable,
+                                      userInfo: [NSLocalizedDescriptionKey: "CoreDevice keyboard service could not be opened, so guest input cannot start: \(error)",
+                                                 NSUnderlyingErrorKey: error])
+                    }
                     throw NSError(domain: "HIDInjector", code: 8,
                                   userInfo: [NSLocalizedDescriptionKey: "CoreDevice \(transport) capability lookup failed: \(error)",
                                              NSUnderlyingErrorKey: error])
