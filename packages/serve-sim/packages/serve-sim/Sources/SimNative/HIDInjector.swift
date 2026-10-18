@@ -113,7 +113,7 @@ actor HIDInjector {
                 // A digitizer without the keyboard service means CoreDevice owns guest
                 // input but cannot start delivery; legacy sends would be acknowledged
                 // and dropped, so report input as unavailable instead.
-                if isFoldable || (error as NSError).code == Self.keyboardServiceUnavailable { throw error }
+                if isFoldable || (error as NSError).code == CoreDeviceHIDServices.keyboardServiceUnavailable { throw error }
                 digitizerCapability = nil
                 keyboardCapability = nil
                 hidLog("[hid] CoreDevice HID unavailable; using legacy input: \(error)")
@@ -183,8 +183,6 @@ actor HIDInjector {
         hidLog("[hid] IndigoHIDMessageForMouseNSEvent loaded (with edge gesture support)")
     }
 
-    private static let keyboardServiceUnavailable = 9
-
     private func setupCoreDeviceHID(deviceUDID: String) async throws {
         // Duo keeps its existing requirement for both transports. Ordinary iOS
         // touch must remain usable when only the optional keyboard is missing.
@@ -197,41 +195,26 @@ actor HIDInjector {
             throw NSError(domain: "HIDInjector", code: 7,
                           userInfo: [NSLocalizedDescriptionKey: "CoreDevice keyboard transport is unavailable (missing symbols or unsupported value layout)"])
         }
-        // Capabilities can become available after the simulator is listed.
-        // Do not cache a transient lookup failure or fall back to Indigo on
-        // the inner panel: its legacy service is disconnected.
-        for attempt in 0..<10 {
-            var transport = "touch"
-            do {
-                digitizerCapability = try await CoreDeviceBridge.shared.capability(
+        let services = try await CoreDeviceHIDServices.open(
+            digitizer: {
+                try await CoreDeviceBridge.shared.capability(
                     udid: deviceUDID,
                     metadataSymbol: "$s10CoreDevice29UniversalHIDServiceCapabilityVN",
                     witnessSymbol: "$s10CoreDevice29UniversalHIDServiceCapabilityVAA0bE0AAWP"
                 )
-                transport = "keyboard"
+            },
+            keyboard: {
                 // Opening this service also starts guest HID delivery. Request
                 // it even when the optional key encoder is unavailable.
-                keyboardCapability = try await CoreDeviceBridge.shared.capability(
+                try await CoreDeviceBridge.shared.capability(
                     udid: deviceUDID,
                     metadataSymbol: "$s10CoreDevice21KeyboardHIDCapabilityVN",
                     witnessSymbol: "$s10CoreDevice21KeyboardHIDCapabilityVAA0B10CapabilityAAWP"
                 )
-                break
-            } catch {
-                if attempt == 9 {
-                    if transport == "keyboard" {
-                        // Opening this service starts guest HID delivery; without it no input arrives.
-                        throw NSError(domain: "HIDInjector", code: Self.keyboardServiceUnavailable,
-                                      userInfo: [NSLocalizedDescriptionKey: "CoreDevice keyboard service could not be opened, so guest input cannot start: \(error)",
-                                                 NSUnderlyingErrorKey: error])
-                    }
-                    throw NSError(domain: "HIDInjector", code: 8,
-                                  userInfo: [NSLocalizedDescriptionKey: "CoreDevice \(transport) capability lookup failed: \(error)",
-                                             NSUnderlyingErrorKey: error])
-                }
-                try await Task.sleep(nanoseconds: 250_000_000)
             }
-        }
+        )
+        digitizerCapability = services.digitizer
+        keyboardCapability = services.keyboard
         if !keyboardAvailable {
             print("[hid] CoreDevice keyboard unavailable; touch input remains available")
         }

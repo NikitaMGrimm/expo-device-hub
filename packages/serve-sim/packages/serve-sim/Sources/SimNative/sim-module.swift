@@ -31,6 +31,7 @@ private func u32(_ v: Int) -> UInt32 {
         self.udid = udid
         let injector = HIDInjector()
         self.injector = injector
+        // @ref LLP 0004#touch-transport — all commands deliberately share the setup failure gate.
         setup = HIDInputSetup { try await injector.setup(deviceUDID: udid) }
     }
 

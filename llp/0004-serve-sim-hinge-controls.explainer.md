@@ -403,6 +403,14 @@ reproduced ownership state, so they are not a fallback for missing CoreDevice
 encoding [observed: `SimHID.setScreen`, `NativeHid`, `DeviceSession.screenConfig`,
 `StreamStatusPill`; local UIKit typing probe, 2026-10-16].
 
+The shared setup gate deliberately also disables Home, rotation, and memory
+warnings after a keyboard-service lookup failure, even where their backends
+could operate independently. Keeping one setup gate is an accepted simplicity
+tradeoff [confirmed: Gabe Debes, 2026-10-18]. Failure stays latched until the
+session is recreated; capture can continue. This is distinct from the missing
+key-encoder case, which disables only keyboard input [observed:
+`HIDInputSetup`, `SimHID`, `NativeHid.setScreen`].
+
 The local preview keeps streaming with the keyboard-only warning visible
 [observed: iPhone 16e, iOS 27.0, injected missing key encoder, 2026-10-16]:
 
