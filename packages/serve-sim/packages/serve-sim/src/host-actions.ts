@@ -694,7 +694,7 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSe
       const deadline = Date.now() + actionTimeoutMs();
       try {
         return uploadId === undefined ? await installAppAsync(p.udid, path, deadline)
-          : await withStagedUploadSnapshotAsync(uploadId, source => installAppAsync(p.udid, source, deadline));
+          : await withStagedUploadSnapshotAsync(uploadId, source => installAppAsync(p.udid, source, deadline), deadline);
       } catch (error) {
         return { stdout: "", stderr: redactHostPaths(error instanceof Error ? error.message : String(error)), exitCode: 1 };
       }
