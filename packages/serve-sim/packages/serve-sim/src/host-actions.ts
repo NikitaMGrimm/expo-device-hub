@@ -1,5 +1,5 @@
 import { rm, stat } from "fs/promises";
-import { basename, dirname, join } from "path";
+import { join } from "path";
 import { z } from "zod";
 import { installAppAsync } from "./app-install";
 import { AppRelativePath, runAppFileAction } from "./app-files";
@@ -14,7 +14,7 @@ import {
   redactHostPaths,
   actionTimeoutMs,
 } from "./host-actions-utils";
-import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR, UPLOAD_DIR } from "./host-paths";
+import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR } from "./host-paths";
 import { ScreenshotName, captureScreenshotAsync, newScreenshotName } from "./screenshot-store";
 import { approveUrlScheme, launchApp, openUrlInApp, stopApp } from "./launch-manager";
 import { CA_DEBUG_FLAGS } from "./ca-debug";
@@ -30,6 +30,7 @@ import {
   appendUploadChunkAsync,
   removeUploadAsync,
   withStagedUploadSnapshotAsync,
+  getStagedUploadId,
   stagedUploadPath,
   reserveThumbnailPathAsync,
 } from "./upload-store";
@@ -689,7 +690,7 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSe
     case "app.install": {
       const p = parseParams(action, raw);
       const path = fileSourcePath(p);
-      const uploadId = "uploadId" in p ? p.uploadId : dirname(path) === UPLOAD_DIR ? basename(path) : undefined;
+      const uploadId = "uploadId" in p ? p.uploadId : getStagedUploadId(path);
       const deadline = Date.now() + actionTimeoutMs();
       try {
         return uploadId === undefined ? await installAppAsync(p.udid, path, deadline)
