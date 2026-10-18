@@ -29,6 +29,8 @@ import {
   closeDeviceSession,
   getDeviceSession,
   peekDeviceSession,
+  retainDeviceSession,
+  withDeviceSessionTask,
 } from "./device-session";
 import {
   assertBearerAccess,
@@ -739,7 +741,12 @@ function serveHelperInProcess(
   switch (endpoint) {
     case "/stream.mjpeg": session.handleMjpeg(req, res); return true;
     case "/stream.avcc": session.handleAvcc(req, res); return true;
-    case "/stream-settings": void session.handleStreamSettings(req, res); return true;
+    case "/stream-settings":
+      void withDeviceSessionTask(session, async () => {
+        await session.handleStreamSettings(req, res);
+        if (req.method === "PATCH" && res.statusCode === 200) retainDeviceSession(session);
+      });
+      return true;
     case "/config": session.handleConfig(req, res); return true;
     case "/health": session.handleHealth(req, res); return true;
     case "/webrtc/offer": void session.handleWebRTCOffer(req, res); return true;
