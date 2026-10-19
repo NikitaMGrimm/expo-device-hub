@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import { keyEventsForInputType } from '../mobile-keyboard';
-import { createPacedKeySender } from '../paced-key-sender';
-import { type HidKeyEvent } from '../types';
+import { keyEventsForInputType } from "../mobile-keyboard";
+import { createPacedKeySender } from "../paced-key-sender";
+import { type HidKeyEvent } from "../types";
 
 function fakeScheduler() {
   const pending: Array<() => void> = [];
@@ -89,16 +89,24 @@ test("idle settles after the last event is sent, and on cancel", async () => {
   const clock = fakeScheduler();
   const sender = createPacedKeySender(() => {}, 4, clock.schedule, clock.cancel);
   await sender.idle();
-  sender.enqueue([{ type: "down", usage: 4 }, { type: "up", usage: 4 }]);
+  sender.enqueue([
+    { type: "down", usage: 4 },
+    { type: "up", usage: 4 },
+  ]);
   let idle = false;
-  void sender.idle().then(() => { idle = true; });
+  void sender.idle().then(() => {
+    idle = true;
+  });
   await Promise.resolve();
   expect(idle).toBe(false);
   clock.drain();
   await Promise.resolve();
   expect(idle).toBe(true);
 
-  sender.enqueue([{ type: "down", usage: 5 }, { type: "up", usage: 5 }]);
+  sender.enqueue([
+    { type: "down", usage: 5 },
+    { type: "up", usage: 5 },
+  ]);
   const cancelled = sender.idle();
   sender.cancel();
   await cancelled;

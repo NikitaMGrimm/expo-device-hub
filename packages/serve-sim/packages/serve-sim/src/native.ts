@@ -11,10 +11,7 @@ import { createRequire } from "module";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
-import {
-  DEFAULT_STREAM_ENCODER_SETTINGS,
-  type StreamEncoderSettings,
-} from "./stream-settings";
+import { DEFAULT_STREAM_ENCODER_SETTINGS, type StreamEncoderSettings } from "./stream-settings";
 import { readSenderStats, type SenderStats } from "./webrtc-sender-stats";
 import type { HingePhysicalOrientation } from "./hinge-control";
 
@@ -25,20 +22,36 @@ const require = createRequire(import.meta.url);
 // handle is garbage-collected (Swift `deinit`), so there are no explicit
 // destroy/free calls here.
 interface SimHIDHandle {
-  setScreen(screenId: number): Promise<void>;
+  setScreen(screenId: number): Promise<boolean | void>;
   supportsHingeAngle(): Promise<boolean>;
   hingeState(): Promise<NativeHingeState>;
+  hingeControlEligibility(): Promise<NativeHingeState>;
   setHingeAngle(angle: number): Promise<boolean>;
   setHingePose(pose: string): Promise<boolean>;
   supportsPhysicalOrientation(): Promise<boolean>;
   setPhysicalOrientation(value: HingePhysicalOrientation): Promise<boolean>;
   setTableMode(enabled: boolean): Promise<boolean>;
   touch(type: TouchType, x: number, y: number, w: number, hh: number, edge: number): Promise<void>;
-  multiTouch(type: TouchType, x1: number, y1: number, x2: number, y2: number, w: number, hh: number): Promise<void>;
+  multiTouch(
+    type: TouchType,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    w: number,
+    hh: number,
+  ): Promise<void>;
   button(button: string): Promise<void>;
   buttonHid(page: number, usage: number, phase: ButtonPhase): Promise<void>;
   key(type: KeyType, usage: number): Promise<void>;
-  scroll(dx: number, dy: number, anchorX: number, anchorY: number, w: number, hh: number): Promise<void>;
+  scroll(
+    dx: number,
+    dy: number,
+    anchorX: number,
+    anchorY: number,
+    w: number,
+    hh: number,
+  ): Promise<void>;
   cancelScroll(): Promise<void>;
   digitalCrown(delta: number): Promise<void>;
   orientation(orientation: number): Promise<boolean>;
@@ -65,6 +78,7 @@ interface SimCaptureHandle {
   webRTCSenderStats(sessionId: string): Promise<string>;
   screenSize(): Promise<NativeScreenInfo>;
   subscribeScreenChanges(onChange: () => Promise<void>): Promise<NativeUnsubscribe>;
+  subscribeDeviceState(onSnapshot: (json: string) => Promise<void>): Promise<NativeUnsubscribe>;
   stop(): Promise<void>;
   subscribe(codec: number, onFrame: RawFrameCallback): Promise<NativeUnsubscribe>;
 }
@@ -82,6 +96,7 @@ interface NativeAddon {
   ) => SimCaptureHandle;
   axDescribe(udid: string): Promise<string>;
   axFrontmost(udid: string): Promise<string>;
+  axKeyboardVisible(udid: string): Promise<boolean>;
   axTypeKeyboardCharacter(udid: string, character: string): Promise<boolean>;
   setHardwareKeyboard(udid: string, enabled: boolean): Promise<boolean>;
 }
@@ -119,6 +134,12 @@ export type NativeHingeState = {
   hingeAngle?: number;
   tableMode?: boolean;
   physicalOrientation?: HingePhysicalOrientation;
+};
+
+export type NativeDeviceStateSnapshot = {
+  generation: number;
+  revision: number;
+  state: NativeHingeState;
 };
 
 export type NativeScreenInfo = {
@@ -184,6 +205,7 @@ function load(): NativeAddon {
 export class NativeHid {
   private readonly handle: SimHIDHandle;
   private setupFailed = false;
+  keyboardUnavailable = false;
 
   constructor(udid: string) {
     this.handle = new (load().SimHID)(udid);
@@ -218,12 +240,16 @@ export class NativeHid {
   async setScreen(screenId: number): Promise<void> {
     if (this.inputUnavailable) return;
     try {
-      await this.handle.setScreen(screenId);
+      // Older addons return void; a false result explicitly disables only keys.
+      this.keyboardUnavailable = (await this.handle.setScreen(screenId)) === false;
     } catch (err) {
       // Native setup is cached for this handle; a failed setup cannot recover
       // until a new session. Keep capture running without calling partial HID state.
       this.setupFailed = true;
-      console.error("[hid] Input setup failed; streaming will continue without input:", err instanceof Error ? err.message : err);
+      console.error(
+        "[hid] Input setup failed; streaming will continue without input:",
+        err instanceof Error ? err.message : err,
+      );
     }
   }
 
@@ -236,7 +262,11 @@ export class NativeHid {
   }
 
   setPhysicalOrientation(value: HingePhysicalOrientation): Promise<boolean> {
-    return this.guard("setPhysicalOrientation", () => this.handle.setPhysicalOrientation(value), false);
+    return this.guard(
+      "setPhysicalOrientation",
+      () => this.handle.setPhysicalOrientation(value),
+      false,
+    );
   }
 
   setTableMode(enabled: boolean): Promise<boolean> {
@@ -248,15 +278,41 @@ export class NativeHid {
   }
 
   supportsPhysicalOrientation(): Promise<boolean> {
-    return this.guard("supportsPhysicalOrientation", () => this.handle.supportsPhysicalOrientation(), false);
+    return this.guard(
+      "supportsPhysicalOrientation",
+      () => this.handle.supportsPhysicalOrientation(),
+      false,
+    );
   }
 
   hingeState(): Promise<NativeHingeState> {
     return this.guard("hingeState", () => this.handle.hingeState(), {});
   }
 
-  multiTouch(type: TouchType, x1: number, y1: number, x2: number, y2: number, w: number, h: number): Promise<void> {
-    return this.guard("multiTouch", () => this.handle.multiTouch(type, x1, y1, x2, y2, w, h), undefined);
+  async hingeControlEligibility(): Promise<NativeHingeState> {
+    return (
+      (await this.guard(
+        "hingeControlEligibility",
+        () => this.handle.hingeControlEligibility(),
+        {},
+      )) ?? {}
+    );
+  }
+
+  multiTouch(
+    type: TouchType,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    w: number,
+    h: number,
+  ): Promise<void> {
+    return this.guard(
+      "multiTouch",
+      () => this.handle.multiTouch(type, x1, y1, x2, y2, w, h),
+      undefined,
+    );
   }
 
   button(button: string): Promise<void> {
@@ -268,18 +324,37 @@ export class NativeHid {
   }
 
   key(type: KeyType, usage: number): Promise<void> {
+    if (this.keyboardUnavailable) return this.rejectUnavailableKeyboard("key");
     return this.guard("key", () => this.handle.key(type, usage), undefined);
   }
 
   /** Clipboard shortcuts need a failed keypress to reach their acknowledgement path. */
   keyChecked(type: KeyType, usage: number): Promise<void> {
+    if (this.keyboardUnavailable) return this.rejectUnavailableKeyboard("keyChecked");
     if (this.inputUnavailable) return Promise.reject(new Error("Simulator input is unavailable"));
     return Promise.resolve().then(() => this.handle.key(type, usage));
   }
 
+  private rejectUnavailableKeyboard(operation: string): Promise<never> {
+    const error = new Error("Simulator keyboard input is unavailable");
+    console.error(`[hid] ${operation} rejected:`, error.message);
+    return Promise.reject(error);
+  }
+
   /** anchorX/anchorY default to screen center when omitted. */
-  scroll(dx: number, dy: number, w: number, h: number, anchorX?: number, anchorY?: number): Promise<void> {
-    return this.guard("scroll", () => this.handle.scroll(dx, dy, anchorX ?? NaN, anchorY ?? NaN, w, h), undefined);
+  scroll(
+    dx: number,
+    dy: number,
+    w: number,
+    h: number,
+    anchorX?: number,
+    anchorY?: number,
+  ): Promise<void> {
+    return this.guard(
+      "scroll",
+      () => this.handle.scroll(dx, dy, anchorX ?? NaN, anchorY ?? NaN, w, h),
+      undefined,
+    );
   }
 
   cancelScroll(): Promise<void> {
@@ -317,8 +392,15 @@ export class NativeCapture {
   private readonly handle: SimCaptureHandle;
 
   /** A fixed screen ID captures that panel independently of active-display/input routing. */
-  constructor(udid: string, options: NativeCaptureOptions = DEFAULT_STREAM_ENCODER_SETTINGS, screenId?: number) {
-    if (screenId !== undefined && (!Number.isInteger(screenId) || screenId < 0 || screenId > 0xffff_ffff)) {
+  constructor(
+    udid: string,
+    options: NativeCaptureOptions = DEFAULT_STREAM_ENCODER_SETTINGS,
+    screenId?: number,
+  ) {
+    if (
+      screenId !== undefined &&
+      (!Number.isInteger(screenId) || screenId < 0 || screenId > 0xffff_ffff)
+    ) {
       throw new RangeError("Screen ID must be an unsigned 32-bit integer.");
     }
     this.handle = new (load().SimCapture)(
@@ -402,6 +484,20 @@ export class NativeCapture {
     return this.handle.screenSize();
   }
 
+  async subscribeDeviceState(
+    onSnapshot: (snapshot: NativeDeviceStateSnapshot) => Promise<void>,
+  ): Promise<NativeUnsubscribe> {
+    let active = true;
+    const unsubscribe = await this.handle.subscribeDeviceState(async (json) => {
+      if (active) await onSnapshot(JSON.parse(json) as NativeDeviceStateSnapshot);
+    });
+    return async () => {
+      if (!active) return;
+      active = false;
+      await unsubscribe();
+    };
+  }
+
   subscribeScreenChanges(onChange: () => Promise<void>): Promise<NativeUnsubscribe> {
     return this.handle.subscribeScreenChanges(onChange);
   }
@@ -424,6 +520,11 @@ export function axDescribeAsync(udid: string): Promise<string> {
 /** Async frontmost-app probe — JSON string `{ bundleId, pid }` for the visible app. */
 export function axFrontmostAsync(udid: string): Promise<string> {
   return load().axFrontmost(udid);
+}
+
+/** Read-only keyboard probe with a 250 ms native traversal/XPC budget. */
+export function axKeyboardVisibleAsync(udid: string): Promise<boolean> {
+  return load().axKeyboardVisible(udid);
 }
 
 export function axTypeKeyboardCharacterAsync(udid: string, character: string): Promise<boolean> {

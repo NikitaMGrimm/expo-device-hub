@@ -143,11 +143,9 @@ test("blur releases held modifiers and forwards browser metadata", async () => {
   ]);
 });
 
-
-test('input refusal is announced while the live video stays visible', async () => {
-  await setup('Simulator input unavailable');
-  const notice = renderer!.root.findByProps({ role: 'status' });
-  expect(notice.children).toEqual(['Simulator input unavailable']);
-  expect(renderer!.root.findByType('img')).toBeDefined();
-  expect(renderer!.root.findAllByProps({ children: 'Not connected' })).toHaveLength(0);
+test("input refusal stays available to the consumer without SDK notice UI", async () => {
+  await setup("Simulator input unavailable");
+  expect(renderer!.root.findAllByProps({ role: "status" })).toHaveLength(0);
+  expect(renderer!.root.findByType("img")).toBeDefined();
+  expect(renderer!.root.findAllByProps({ children: "Not connected" })).toHaveLength(0);
 });

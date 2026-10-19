@@ -36,6 +36,35 @@ Responses carry `Cache-Control: no-store`, so a proxy does not keep clipboard te
 
 [Copy](#copy) uses this route, with `?copy=1`. So the rules at the start of this section apply to Copy too. On the input socket, Copy sends only an input barrier. The reply holds a request ID and a result, and no text [observed: `copySimClipboardAfterInput` in `src/client/utils/sim-clipboard.ts` and its caller in `src/client/client.tsx`, the `0x11` case in `src/device-session.ts`].
 
+## Clipboard host actions
+
+The action catalog also exposes `clipboard.read`, `clipboard.write`,
+`clipboard.copy`, and `clipboard.paste` through `/exec-ws`, using that socket's
+token and Origin policy. Read and Copy return JSON `{text, cleanupWarning?}` in
+`stdout`, preserving whitespace and JSON-looking text. Write and Paste return
+`{ok: true, cleanupWarning?}`; failures put the reason and any cleanup warning
+in `stderr` with a nonzero exit code [observed: `src/host-actions.ts`].
+
+Read and Write reuse the pasteboard helpers above. Copy and Paste start an input
+session when needed, so a browser viewer is not required. Both wait for capture
+readiness and acquire their shared input turn before the pasteboard lock. Paste
+with no text uses the existing simulator clipboard; empty text writes an empty
+string before the chord. A stopped session or discarded queued Paste fails
+without claiming success [observed: `getDeviceSession`, `copyPasteboard`, and
+`pastePasteboard` in `src/device-session.ts`].
+
+When Copy or Paste creates the session before a viewer, it uses the owning
+middleware's configured stream settings, passed through the exec handler to the
+host action. A later viewer reuses that session with the configured transport
+and encoder settings. These settings come from the middleware, not action
+parameters [observed: `src/middleware.ts`, `src/socket/server-control.ts`,
+`src/host-actions.ts`, `getDeviceSession` in `src/device-session.ts`].
+
+The host actions accept one simulator UUID, normalized to uppercase so sessions
+and locks share the same key. The text limit remains 4 MiB of UTF-8; the exec
+socket's separate 4 MiB message limit includes the JSON envelope and escaping
+[observed: `src/host-actions.ts`, `src/socket/server-control.ts`].
+
 ## Reading when `simctl pbpaste` fails
 
 When `simctl pbpaste` fails, the read asks the foreground app instead [observed: `readPasteboardOnce` in `src/sim-pasteboard-reader.ts`]. This path is meant for headless workers, which have no GUI login session:
@@ -98,6 +127,18 @@ Decisions [confirmed: Gabe Debes]:
 - **A failed Paste keeps the new text** on the simulator pasteboard. Restoring the old content would cost another read and write (2026-09-29).
 - **A stuck Command key is a separate warning.** If Command cannot be released after V was, the text may already be pasted, so Paste reports success and shows a key warning (2026-09-29).
 
+### Cold shortcut registration
+
+The initial clipboard implementation deferred cold shortcut initialization because text still reached the device pasteboard; users could use the device's Paste menu even if Command+V did not insert it into the field [confirmed: Gabe Debes, 2026-10-15]. With Hardware Keyboard OFF, BackBoard could route the first Command+V to SpringBoard while Safari's field stayed empty [observed: released serve-sim 0.9.0, owned iPhone 17 Simulator, iOS 26.4, Xcode 26.4, 2026-10-15; local native BackBoard logs].
+
+The injected clipboard reader publishes the app's key commands, including Paste, as the software keyboard opens, when the app becomes active, and once when the reader loads into an active app. It temporarily allows `_shouldUpdateSerializableKeyCommandsForResponder:` while calling `_immediatelyUpdateSerializableKeyCommands`, then restores the original method before returning. The refresh runs on the main thread, rejects re-entry, and leaves unknown signatures and app overrides alone, logging that guard failure once per app process. It does not toggle Hardware Keyboard or add a per-action wait [observed: `Sources/SimPasteboardReader/sim-pasteboard-reader.m`].
+
+This preparation uses the existing default-on `clipboard` capability. Apps launched before serve-sim installed its capability loader must be restarted by the user to load it. Apps launched with `--disable clipboard` do not load this preparation. Those cases retain the initial limitation. Disabling the capability does not unload a reader already loaded into a running app; its observers remain until that process exits. serve-sim does not restart an app to prepare shortcuts. The host's HID dispatch, modifier ownership, and keyboard setting are unchanged [observed: `src/sim-pasteboard-reader.ts`, `src/clipboard-session.ts`, `src/device-session.ts`; [LLP 0007](0007-serve-sim-capability-loader.explainer.md#arriving-late)].
+
+On the tested iOS 26.4 and 27.0 runtimes, the first delivered HID key can hide the software keyboard while Hardware Keyboard remains OFF. The same hide occurred with the unmodified reader on an ordinary `a` key on both runtimes. Reader preparation alone left it visible in the iOS 27.0 idle control. This fix does not change that existing input behavior [observed: owned iPhone 17 Simulators, iOS 26.4 and 27.0, 2026-10-15; old-reader raw-key and new-reader idle/Paste controls].
+
+The Paste reply acknowledges the pasteboard write and HID dispatch, not insertion by the focused app. The write happens before the shortcut, so text can reach the simulator pasteboard while a lost shortcut leaves the field unchanged. The native app-paste test enables the clipboard capability, sets Hardware Keyboard OFF before launching a plain UIKit text view, sends one Paste with no preceding shortcut, checks the field's exact Unicode editing-change event rather than accepting the reply alone, and repeats after an app relaunch without another keyboard toggle. Only the initial launch requires software-keyboard visibility: an earlier HID key can leave it hidden across app relaunches, while each launch must still become active and insert its exact first Paste [observed: `src/sim-pasteboard-paste.ts`, Paste reply in `src/device-session.ts`, `src/__tests__/sim-clipboard.e2e.test.ts`].
+
 ## Copy
 
 Toolbar Copy reads the text that the simulator app copies and puts it on the browser clipboard.
@@ -115,7 +156,7 @@ A helper that does not set `inputCopy` in its state acknowledges the input barri
 
 Copy reads the text through `ServeSimPasteboard.app`, the pasteboard tool installed as an app, because a read needs an installed app identity that `simctl privacy` can grant [observed: `Sources/SimPasteboard/build.sh`]. serve-sim checks for the app before each Copy, because erasing the simulator removes it [observed: `src/sim-pasteboard-copy.ts`]. If the installed executable differs from the one that serve-sim ships, Copy uninstalls the app and then installs it [observed: `installedPasteboardAppTool` in `src/sim-pasteboard-copy.ts`]. An install over the older app is not enough: when both executables had the same size and modification time, the old executable stayed [observed: iOS 26.4 and 27.0 simulators, 2026-10-13].
 
-The app stays installed and granted after Copy. `--disable clipboard` and `clipboard: false` do not stop Copy, so they do not prevent this install or grant [observed: the Copy branch of the pasteboard route in `src/middleware.ts`]. The app shows on the Home screen as "ServeSimPaste…" with a blank icon [observed: iOS 26.4 simulator, 2026-10-13]. A tap on the icon or `simctl launch` starts the tool with no arguments. A build of the tool that wrote when it had no arguments cleared the text after a tap and after `simctl launch` [observed: iOS 26.4 simulator, 2026-10-13]. So the tool writes the pasteboard only when it gets `--write`. With no arguments, it prints its usage and exits without a write [observed: `Sources/SimPasteboard/sim-pasteboard.m`, `src/__tests__/pasteboard-tool.e2e.test.ts`]. To remove the app, run `xcrun simctl uninstall <udid> com.expo.serve-sim-pasteboard`. The next Copy installs and grants it again [observed: `installedPasteboardAppTool` in `src/sim-pasteboard-copy.ts`].
+The app stays installed and granted after Copy. `--disable clipboard` and `clipboard: false` do not stop Copy, so they do not prevent this install or grant [observed: the Copy branch of the pasteboard route in `src/middleware.ts`]. The app displays as "Clipboard Helper", with a white clipboard and orange transfer arrow on a dark background. The full name fits on the iPhone 17 Pro Home screen [observed: local iOS 26.4 simulator, 2026-10-14; `Sources/SimPasteboard/Info.plist` and `Icons/`]. A tap on the icon or `simctl launch` starts the tool with no arguments. A build of the tool that wrote when it had no arguments cleared the text after a tap and after `simctl launch` [observed: iOS 26.4 simulator, 2026-10-13]. So the tool writes the pasteboard only when it gets `--write`. With no arguments, it prints its usage and exits without a write [observed: `Sources/SimPasteboard/sim-pasteboard.m`, `src/__tests__/pasteboard-tool.e2e.test.ts`]. To remove the app, run `xcrun simctl uninstall <udid> com.expo.serve-sim-pasteboard`. The next Copy installs and grants it again [observed: `installedPasteboardAppTool` in `src/sim-pasteboard-copy.ts`].
 
 Decisions [confirmed: Gabe Debes]:
 

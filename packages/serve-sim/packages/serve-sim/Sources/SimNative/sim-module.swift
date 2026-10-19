@@ -31,13 +31,18 @@ private func u32(_ v: Int) -> UInt32 {
         self.udid = udid
         let injector = HIDInjector()
         self.injector = injector
+        // @ref LLP 0004#touch-transport — all commands deliberately share the setup failure gate.
         setup = HIDInputSetup { try await injector.setup(deviceUDID: udid) }
     }
 
-    /// Zero means capture has no modern screen metadata; retain legacy routing.
-    @NodeMethod func setScreen(_ screenID: Int) async throws {
+    /// Zero omits capture metadata; ordinary iOS uses its sole profile panel.
+    /// Returns keyboard availability after setup; touch remains independent.
+    @NodeMethod func setScreen(_ screenID: Int) async throws -> Bool {
         let id = UInt32(exactly: screenID).flatMap { $0 > 0 ? $0 : nil }
-        try await setup.run { await injector.setScreen(screenID: id) }
+        return try await setup.run {
+            await injector.setScreen(screenID: id)
+            return await injector.supportsKeyboard()
+        }
     }
 
     @NodeMethod func touch(_ type: String, _ x: Double, _ y: Double,
@@ -104,7 +109,14 @@ private func u32(_ v: Int) -> UInt32 {
     }
 
     @NodeMethod func hingeState() async -> [String: any NodePropertyConvertible] {
-        let state = await CoreDeviceBridge.shared.hingeState(udid: udid)
+        hingeStateProperties(await CoreDeviceBridge.shared.hingeState(udid: udid))
+    }
+
+    @NodeMethod func hingeControlEligibility() async -> [String: any NodePropertyConvertible] {
+        hingeStateProperties(await CoreDeviceBridge.shared.hingeControlEligibility(udid: udid))
+    }
+
+    private func hingeStateProperties(_ state: CoreDeviceBridge.HingeState) -> [String: any NodePropertyConvertible] {
         var result: [String: any NodePropertyConvertible] = [:]
         if let angle = state.angle { result["hingeAngle"] = angle }
         if let tableMode = state.tableMode { result["tableMode"] = tableMode }
@@ -276,7 +288,7 @@ private func u32(_ v: Int) -> UInt32 {
         if let display = dimensions.display {
             // The screen-ID Indigo target is for integrated digitizers. Keep
             // external/scene displays on the existing input fallback.
-            if display.screenType == 0 { result["screenId"] = Int(display.screenID) }
+            if let screenID = display.integratedScreenID { result["screenId"] = Int(screenID) }
             if let orientation = display.orientation { result["orientation"] = orientation }
             if let chromeIdentifier = display.chromeIdentifier { result["chromeIdentifier"] = chromeIdentifier }
         }
@@ -292,6 +304,23 @@ private func u32(_ v: Int) -> UInt32 {
                 }
             }
         }
+        return try NodeFunction { await unsubscribe() }
+    }
+
+    @NodeMethod func subscribeDeviceState(_ onChange: NodeFunction) async throws -> NodeFunction {
+        // The producer bounds dispatch to one in flight and one latest snapshot.
+        let stateQueue = try NodeAsyncQueue(label: "simCapture.deviceState")
+        let delivery = DeviceStateDelivery { snapshot, delivery in
+            guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            let json = String(decoding: data, as: UTF8.self)
+            try? await stateQueue.run { () async throws -> Void in
+                guard delivery.isActive, !Task.isCancelled else { return }
+                _ = try? onChange.call([json]).as(NodePromise.self)?.catch(NodeFunction { (_: AnyNodeValue) in undefined })
+            }
+        }
+        let unsubscribe = await engine.subscribeDeviceState({ delivery.submit($0) }, onDetach: {
+            await delivery.cancel()?.value
+        })
         return try NodeFunction { await unsubscribe() }
     }
 
@@ -365,6 +394,12 @@ private func axQuery<T: Sendable>(
             let info = try AccessibilityBridge.shared.frontmostApp(udid: udid)
             let data = try JSONSerialization.data(withJSONObject: info)
             return String(decoding: data, as: UTF8.self)
+        }
+    },
+    "axKeyboardVisible": try NodeFunction { (udid: String) async throws -> Bool in
+        try await axQuery(udid) { udid in
+            SimFrameworks.load()
+            return try AccessibilityBridge.shared.isSoftwareKeyboardVisible(udid: udid)
         }
     },
     "axTypeKeyboardCharacter": try NodeFunction { (udid: String, character: String) async throws -> Bool in

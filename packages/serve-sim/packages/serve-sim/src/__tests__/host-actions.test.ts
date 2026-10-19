@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 
-import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
+import { InvalidHostActionError, describeHostActions, runHostActionAsync } from "../host-actions";
 import { UDID } from "./helpers";
 import { SCREENSHOT_DIR, UPLOAD_DIR } from "../host-paths";
 
@@ -39,6 +39,29 @@ describe("runHostActionAsync validation", () => {
         BIN,
       ),
     ).rejects.toBeInstanceOf(InvalidHostActionError);
+    await expect(
+      runHostActionAsync(
+        { action: "hardwareKeyboard.set", params: { udid: "U", value: "true" } },
+        BIN,
+      ),
+    ).rejects.toThrow(/^hardwareKeyboard\.set: value /);
+    for (const params of [
+      { udid: "U", value: "huge" },
+      { udid: "U", value: "--help" },
+    ]) {
+      await expect(runHostActionAsync({ action: "textSize.set", params }, BIN)).rejects.toThrow(
+        /^textSize\.set: value /,
+      );
+    }
+    await expect(
+      runHostActionAsync({ action: "hinge.set", params: { udid: "U", value: 181 } }, BIN),
+    ).rejects.toThrow(/^hinge\.set: value /);
+    await expect(
+      runHostActionAsync(
+        { action: "caDebug.set", params: { udid: "U", option: "debug_everything", value: "on" } },
+        BIN,
+      ),
+    ).rejects.toThrow(/^caDebug\.set: option /);
   });
 
   it("rejects a bundle id carrying shell metacharacters", async () => {
@@ -120,7 +143,10 @@ describe("runHostActionAsync validation", () => {
     symlinkSync(join(UPLOAD_DIR, `probe-gone-${randomUUID()}.txt`), link);
 
     try {
-      const attempt = runHostActionAsync({ action: "file.readBase64", params: { path: link } }, BIN);
+      const attempt = runHostActionAsync(
+        { action: "file.readBase64", params: { path: link } },
+        BIN,
+      );
       await expect(attempt).rejects.toBeInstanceOf(InvalidHostActionError);
       await expect(attempt).rejects.toThrow(/is a link this server cannot follow/);
     } finally {
@@ -215,7 +241,10 @@ describe("runHostActionAsync validation", () => {
 
   it("refuses coordinates that are not numbers", async () => {
     await expect(
-      runHostActionAsync({ action: "location.set", params: { udid: "U", lat: null, lng: null } }, BIN),
+      runHostActionAsync(
+        { action: "location.set", params: { udid: "U", lat: null, lng: null } },
+        BIN,
+      ),
     ).rejects.toBeInstanceOf(InvalidHostActionError);
   });
 
@@ -271,7 +300,10 @@ describe("capture actions", () => {
     const setEnabled = spyOn(capture.captureRuntime, "setDeviceCaptureEnabled");
     const reboot = spyOn(capture, "rebootWithCapture");
     try {
-      const result = await runHostActionAsync({ action: "capture.enable", params: { udid: UDID } }, BIN);
+      const result = await runHostActionAsync(
+        { action: "capture.enable", params: { udid: UDID } },
+        BIN,
+      );
       expect(result.exitCode).toBe(0);
       expect(enable.mock.calls[0]?.[0]).toBe(UDID);
       expect(enable.mock.calls[0]?.[1]).toBeUndefined();
@@ -305,13 +337,21 @@ describe("capture actions", () => {
   it("changes a capturing device's fields, and says when capture is off", async () => {
     const capture = await import("../capture");
     const meta = { ...capture.captureRuntime.metaFor(UDID), fields: ["query"] };
-    const set = spyOn(capture.captureRuntime, "setFieldsForDevice").mockReturnValueOnce(meta).mockReturnValueOnce(null);
+    const set = spyOn(capture.captureRuntime, "setFieldsForDevice")
+      .mockReturnValueOnce(meta)
+      .mockReturnValueOnce(null);
     try {
-      const changed = await runHostActionAsync({ action: "capture.fields", params: { udid: UDID, fields: ["query"] } }, BIN);
+      const changed = await runHostActionAsync(
+        { action: "capture.fields", params: { udid: UDID, fields: ["query"] } },
+        BIN,
+      );
       expect(changed.exitCode).toBe(0);
       expect(JSON.parse(changed.stdout).fields).toEqual(["query"]);
       expect(set).toHaveBeenCalledWith(UDID, ["query"]);
-      const off = await runHostActionAsync({ action: "capture.fields", params: { udid: UDID, fields: [] } }, BIN);
+      const off = await runHostActionAsync(
+        { action: "capture.fields", params: { udid: UDID, fields: [] } },
+        BIN,
+      );
       expect(off.exitCode).toBe(1);
       expect(off.stderr).toContain("not on for this device");
       // The meta says the device is off, so the panel keeps the pick rather than reporting a failure.
@@ -363,10 +403,17 @@ describe("capture actions", () => {
 
   it("reports a reboot whose capture failed to start as a failed action", async () => {
     const capture = await import("../capture");
-    const meta = { ...capture.captureRuntime.metaFor(UDID), attachment: "failed" as const, attachError: "mitmdump is not installed" };
+    const meta = {
+      ...capture.captureRuntime.metaFor(UDID),
+      attachment: "failed" as const,
+      attachError: "mitmdump is not installed",
+    };
     const reboot = spyOn(capture, "rebootWithCapture").mockResolvedValue(meta);
     try {
-      const result = await runHostActionAsync({ action: "capture.reboot", params: { udid: UDID, enabled: true } }, BIN);
+      const result = await runHostActionAsync(
+        { action: "capture.reboot", params: { udid: UDID, enabled: true } },
+        BIN,
+      );
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toBe("mitmdump is not installed");
       expect(JSON.parse(result.stdout).attachment).toBe("failed");
@@ -376,7 +423,10 @@ describe("capture actions", () => {
   });
 
   it("reports no capture session for an unknown device", async () => {
-    const result = await runHostActionAsync({ action: "capture.clear", params: { udid: UDID } }, BIN);
+    const result = await runHostActionAsync(
+      { action: "capture.clear", params: { udid: UDID } },
+      BIN,
+    );
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("No capture session");
@@ -387,6 +437,96 @@ describe("capture actions", () => {
       await expect(
         runHostActionAsync({ action: "capture.reboot", params: { udid, enabled: true } }, BIN),
       ).rejects.toBeInstanceOf(InvalidHostActionError);
+      await expect(
+        runHostActionAsync({ action: "springboard.restart", params: { udid } }, BIN),
+      ).rejects.toBeInstanceOf(InvalidHostActionError);
+      await expect(
+        runHostActionAsync(
+          {
+            action: "app.approveUrlScheme",
+            params: { udid, bundleId: "com.example.app", scheme: "myapp" },
+          },
+          BIN,
+        ),
+      ).rejects.toBeInstanceOf(InvalidHostActionError);
     }
+  });
+});
+
+describe("action catalog", () => {
+  const catalog = describeHostActions();
+
+  it("describes each action with its parameters", () => {
+    expect(catalog["hardwareKeyboard.set"]).toMatchObject({
+      description: "Connect or disconnect the hardware keyboard.",
+      type: "object",
+      properties: { value: { enum: ["on", "off"] } },
+      required: ["udid", "value"],
+    });
+    expect(Object.keys(catalog["permissions.set"]?.properties ?? {})).toEqual([
+      "udid",
+      "action",
+      "service",
+      "bundleId",
+    ]);
+    expect(Object.keys(catalog["app.approveUrlScheme"]?.properties ?? {})).toEqual([
+      "udid",
+      "bundleId",
+      "scheme",
+    ]);
+    expect(catalog["springboard.restart"]).toMatchObject({ required: ["udid"] });
+  });
+
+  it("gives every listed action a description", () => {
+    const missing = Object.entries(catalog).filter(
+      ([, entry]) => typeof entry.description !== "string",
+    );
+    expect(missing.map(([name]) => name)).toEqual([]);
+  });
+
+  it("leaves out actions a remote caller has no use for", () => {
+    for (const name of [
+      "server.detach",
+      "server.kill",
+      "reveal",
+      "home.watch",
+      "app.iconPath",
+      "camera.listWebcams",
+      "camera.stopWebcam",
+      "screenshot.thumbnail",
+      "upload.append",
+      "upload.remove",
+      "actions.describe",
+    ]) {
+      expect(catalog).not.toHaveProperty([name]);
+    }
+  });
+
+  it("labels the actions that take or return a file", () => {
+    expect(catalog["app.install"]).toMatchObject({ args: ["path"], upload: "path" });
+    expect(catalog["media.add"]).toMatchObject({ args: ["path"], upload: "path" });
+    expect(catalog["camera.inject"]).toMatchObject({
+      args: ["bundleId", "mirror", "source", "target"],
+      upload: "target",
+      uploadWhen: { source: "file" },
+      keepUpload: true,
+    });
+    expect(catalog["camera.switch"]).toMatchObject({
+      args: ["source", "target"],
+      upload: "target",
+      uploadWhen: { source: "file" },
+      keepUpload: true,
+    });
+    expect(catalog["app.file.upload"]).toMatchObject({ upload: "uploadId", uploadAs: "id" });
+    expect(catalog["app.file.read"]).toMatchObject({ output: "base64" });
+    expect(catalog["screenshot.capture"]).toMatchObject({ output: "path" });
+    expect(catalog["file.readBase64"]).toMatchObject({ output: "base64" });
+  });
+
+  it("serves the catalog as an action", async () => {
+    const result = await runHostActionAsync({ action: "actions.describe" }, BIN);
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual(catalog);
   });
 });

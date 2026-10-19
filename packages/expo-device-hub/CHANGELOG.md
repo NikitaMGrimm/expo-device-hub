@@ -1,5 +1,24 @@
 # expo-device-hub
 
+## 0.17.3
+
+### Patch Changes
+
+- 69f5907: serve-emu now omits scrcpy server options that already hold the server default. With the Hub's default stream settings, the `app_process` command line drops from 344 to 198 bytes. Some Samsung devices, such as the Galaxy M22, abort the scrcpy server when the command line exceeds about 255 bytes, and the Hub listed them but never started their stream. Custom serve-emu settings, such as `--repeat-frame-ms` with a non-default bitrate, can still exceed that length.
+
+## 0.17.2
+
+### Patch Changes
+
+- 3fc89c6: Expose `inputError` on `DeviceScreenClient`, and keep Android video live when only the input socket fails. Render the input-error notice in the Hub phone frame while consumers continue to own their UI.
+- 0eccaea: Android screenshots of a foldable emulator are valid PNGs of the screen in use. Before, `screencap` added a warning in front of the image and captured the inner display, which is off while the device is folded.
+
+## 0.17.1
+
+### Patch Changes
+
+- 14850d3: Accept serve-sim's share options for interface compatibility. They have no effect in the Hub.
+
 ## 0.17.0
 
 ### Minor Changes

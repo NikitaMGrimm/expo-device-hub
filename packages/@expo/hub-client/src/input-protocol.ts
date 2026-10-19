@@ -12,4 +12,5 @@ export const WS_MSG_PASTE = 0x12;
 export const MAX_INPUT_FRAME_BYTES = 4 * 1024 * 1024;
 
 /** Admission refusal when the session is unavailable or input slots are occupied. */
-export const WS_REASON_INPUT_UNAVAILABLE = "Simulator input unavailable; retry after other clients disconnect";
+export const WS_REASON_INPUT_UNAVAILABLE =
+  "Simulator input unavailable; retry after other clients disconnect";
