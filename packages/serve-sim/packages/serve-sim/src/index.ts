@@ -280,13 +280,39 @@ function helperMessage(opcode: number, payload?: unknown): Uint8Array {
   return message;
 }
 
-function sendHelperMessage(state: ServerState, message: Uint8Array): Promise<void> {
+function sendHelperMessage(state: ServerState, message: Uint8Array, waitForButton = false): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
     ws.binaryType = "arraybuffer";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let acknowledged = false;
+    let sent = false;
+    ws.on("message", (data) => {
+      if (!waitForButton) return;
+      const response = Buffer.from(data as ArrayBuffer);
+      if (response[0] !== 0x91) return;
+      acknowledged = true;
+      clearTimeout(timer);
+      ws.close();
+      if (response[1] === 1) resolve();
+      else reject(new Error("Simulator button input failed. Check the preview logs."));
+    });
+    ws.on("close", () => {
+      clearTimeout(timer);
+      if (waitForButton && state.inputAdmission === true && sent && !acknowledged) reject(new Error("Simulator button input interrupted"));
+    });
     onCliInputReady(ws, state.inputAdmission === true, () => {
+      sent = true;
       ws.send(message);
-      setTimeout(() => { ws.close(); resolve(); }, 50);
+      if (waitForButton && state.inputAdmission === true) {
+        ws.send(Uint8Array.of(0x11));
+        timer = setTimeout(() => {
+          reject(new Error("Simulator button input did not finish"));
+          ws.close();
+        }, 10_000);
+      } else {
+        timer = setTimeout(() => { ws.close(); resolve(); }, 50);
+      }
     }, reject);
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", state.wsUrl);
@@ -1045,7 +1071,7 @@ async function button(buttonName = "home", deviceArg?: string) {
   const hid = HID_BUTTON_CODES[buttonName];
   const payload = hid ? { button: buttonName, ...hid } : { button: buttonName };
 
-  return sendHelperMessage(state, helperMessage(0x04, payload));
+  return sendHelperMessage(state, helperMessage(0x04, payload), /* waitForButton */ true);
 }
 
 // Send a CoreAnimation debug option toggle to the helper, which invokes

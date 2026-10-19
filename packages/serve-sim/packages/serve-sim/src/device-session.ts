@@ -1183,7 +1183,7 @@ export class DeviceSession {
     ws.on("message", (data: Buffer) => {
       if (this.phase !== "running" || this.rebootSuspended || this.detachedHidSockets.has(ws)) return;
       const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
-      const isOrderedMessage = buffer[0] === 0x03 || buffer[0] === 0x05 ||
+      const isOrderedMessage = buffer[0] === 0x03 || buffer[0] === 0x04 || buffer[0] === 0x05 ||
         buffer[0] === 0x06 || buffer[0] === 0x0b || buffer[0] === 0x0e;
       const inFlight = this.inFlightHidMessages.get(ws) ?? 0;
       if (inFlight >= MAX_PENDING_INPUT_OPERATIONS_PER_SOCKET) {
