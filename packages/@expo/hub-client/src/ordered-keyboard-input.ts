@@ -232,12 +232,16 @@ export function createOrderedKeyboardInput({
     },
     /** Retire uncertain clipboard work on transport loss; ordinary typing keeps its owner queue. */
     cancelRequests(): void {
-      if (
-        active?.kind === "paste" ||
-        active?.kind === "read" ||
-        queue.some((input) => input.kind === "paste" || input.kind === "read")
-      )
-        cancel();
+      if (active?.kind === "paste" || active?.kind === "read") {
+        const request = active;
+        active = null;
+        rejectRequests([request, ...queue.splice(0)]);
+        return;
+      }
+      const firstRequest = queue.findIndex(
+        (input) => input.kind === "paste" || input.kind === "read",
+      );
+      if (firstRequest !== -1) rejectRequests(queue.splice(firstRequest));
     },
     /** The socket disconnected: requests without a reply fail, and keys behind them are dropped. */
     cancel,

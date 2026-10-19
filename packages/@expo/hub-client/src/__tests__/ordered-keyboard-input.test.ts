@@ -343,3 +343,24 @@ test("transport cleanup rejects clipboard work and drops keys that waited behind
   expect(wire.map((entry) => entry.tag)).toEqual([0x12]);
   input.dispose();
 });
+
+test("transport cleanup preserves typing before the first clipboard request", async () => {
+  const { input, wire } = setup();
+  input.enqueue([key("down", 4), key("up", 4)]);
+  input.send(key("down", 5));
+  input.send(key("up", 5));
+  const paste = input.paste("never replay");
+  const read = input.readAfterInput(async () => "never read");
+  input.enqueue([key("down", 6), key("up", 6)]);
+  input.cancelRequests();
+  await expect(paste).rejects.toThrow(INPUT_DISCONNECTED_MESSAGE);
+  await expect(read).rejects.toThrow(INPUT_DISCONNECTED_MESSAGE);
+  await flush();
+  expect(wire.map((entry) => entry.payload)).toEqual([
+    key("down", 4),
+    key("up", 4),
+    key("down", 5),
+    key("up", 5),
+  ]);
+  input.dispose();
+});

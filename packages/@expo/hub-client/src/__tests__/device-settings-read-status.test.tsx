@@ -1222,7 +1222,7 @@ test("iOS: hardware keyboard polls reconcile changes made by another viewer", as
   await waitFor(() => mounted.client().hardwareKeyboardConnected === false);
 });
 
-test("iOS: desktop admission preserves the keyboard mode from a settings read", async () => {
+test("iOS: an off settings read agrees with admission setup", async () => {
   const server = settingsServer();
   server.state.inputAdmission = true;
   server.state.iosSettings["hardware-keyboard"] = "off";
@@ -1236,7 +1236,7 @@ test("iOS: desktop admission preserves the keyboard mode from a settings read", 
   expect(mounted.client().hardwareKeyboardConnected).toBe(false);
 });
 
-test("iOS: desktop readback recovers on input admission without waiting for the settings poll", async () => {
+test("iOS: desktop re-admission restores the software keyboard before the settings poll", async () => {
   const server = settingsServer();
   server.state.mode = "ready";
   server.state.inputAdmission = true;
@@ -1259,8 +1259,8 @@ test("iOS: desktop readback recovers on input admission without waiting for the 
   await act(async () => {
     for (const socket of server.inputSockets) socket.send(Uint8Array.of(0x83));
   });
-  // No five-second poll tick: admission must request authoritative readback.
-  await waitFor(() => mounted.client().hardwareKeyboardConnected === true);
+  // No five-second poll tick: re-admission applies the Hub hardware-keyboard-off default.
+  await waitFor(() => mounted.client().hardwareKeyboardConnected === false);
   expect(server.writes).toHaveLength(0);
 });
 
@@ -1314,17 +1314,17 @@ test.each([false, true])(
   async (reconnect) => {
     const server = settingsServer();
     server.state.mode = "ready";
-    server.state.iosSettings["hardware-keyboard"] = "off";
+    server.state.iosSettings["hardware-keyboard"] = "on";
     const mounted = await mountClient("ios", server.baseUrl("ios"));
     await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
     await advanceTime(5000);
-    await waitFor(() => mounted.client().hardwareKeyboardConnected === false);
+    await waitFor(() => mounted.client().hardwareKeyboardConnected === true);
     await server.settleReads();
     server.state.holdWrites = true;
-    await act(async () => mounted.client().setHardwareKeyboardConnected(true));
+    await act(async () => mounted.client().setHardwareKeyboardConnected(false));
     await waitFor(() => server.writes.length === 1);
     if (reconnect) {
-      // Keep the new connection's authoritative read pending while the old write fails.
+      // The new admission chooses OFF while the old toggle is still pending.
       server.state.mode = "hold";
       await act(async () => {
         for (const socket of server.inputSockets) socket.close();
@@ -1335,7 +1335,7 @@ test.each([false, true])(
     }
     await act(async () => server.finishWrites("Keyboard change rejected"));
     await waitFor(() => server.receivedErrors.has("Keyboard change rejected"));
-    expect(mounted.client().hardwareKeyboardConnected).toBe(reconnect ? null : false);
+    expect(mounted.client().hardwareKeyboardConnected).toBe(reconnect ? false : true);
   },
 );
 

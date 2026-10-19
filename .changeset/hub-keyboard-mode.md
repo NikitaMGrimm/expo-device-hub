@@ -2,4 +2,4 @@
 "expo-device-hub": patch
 ---
 
-Preserve the selected Hardware Keyboard mode when desktop viewers connect, and refresh the shared setting when another viewer changes it.
+Refresh the shared Hardware Keyboard setting when another viewer changes it. Hub connections still start with Hardware Keyboard off so browser-layout typing works.

@@ -1,4 +1,5 @@
 import { afterEach, expect, jest, spyOn, test } from "bun:test";
+import { StrictMode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { DeviceScreen } from "../DeviceScreen";
@@ -33,6 +34,7 @@ async function renderIosClient(
   helper: { pid: number; absent?: boolean; discovery?: Promise<void> } = { pid: 1 },
   renderScreen = false,
   coarsePointer = true,
+  strictMode = false,
 ) {
   const sockets: FakeSocket[] = [];
   const listeners = new Map<string, Set<() => void>>();
@@ -133,9 +135,18 @@ async function renderIosClient(
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 200 }),
   };
   await act(async () => {
-    renderer = create(<Harness />, {
-      createNodeMock: (node) => (node.type === "div" ? surface : null),
-    });
+    renderer = create(
+      strictMode ? (
+        <StrictMode>
+          <Harness />
+        </StrictMode>
+      ) : (
+        <Harness />
+      ),
+      {
+        createNodeMock: (node) => (node.type === "div" ? surface : null),
+      },
+    );
   });
   const helperSockets = () => sockets.filter((socket) => socket.url.includes("/helper/"));
   return {
@@ -228,7 +239,7 @@ test("malformed config frames cannot admit modern input or set keyboard state", 
 
 for (const coarsePointer of [false, true]) {
   for (const inputAdmission of [true, false]) {
-    test(`${coarsePointer ? "touch admission disconnects" : "desktop admission preserves"} the hardware keyboard on ${inputAdmission ? "modern" : "legacy"} helpers and reconnect`, async () => {
+    test(`${coarsePointer ? "touch" : "desktop"} admission disconnects the hardware keyboard on ${inputAdmission ? "modern" : "legacy"} helpers and reconnect`, async () => {
       const { client, helperSockets } = await renderIosClient(
         inputAdmission,
         { pid: 1 },
@@ -242,17 +253,10 @@ for (const coarsePointer of [false, true]) {
           expect(socket.sent).toHaveLength(0);
           await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
         }
-        if (coarsePointer) {
-          const frame = new Uint8Array(socket.sent[0]!);
-          expect(frame[0]).toBe(0x0e);
-          expect(JSON.parse(new TextDecoder().decode(frame.subarray(1)))).toEqual({
-            enabled: false,
-          });
-          expect(client().hardwareKeyboardConnected).toBe(false);
-        } else {
-          expect(socket.sent).toHaveLength(0);
-          expect(client().hardwareKeyboardConnected).toBeNull();
-        }
+        const frame = new Uint8Array(socket.sent[0]!);
+        expect(frame[0]).toBe(0x0e);
+        expect(JSON.parse(new TextDecoder().decode(frame.subarray(1)))).toEqual({ enabled: false });
+        expect(client().hardwareKeyboardConnected).toBe(false);
       };
       const socket = helperSockets()[0]!;
       await admit(socket);
@@ -957,4 +961,17 @@ test("a completed real pinch keeps its multi-touch pair and an earlier tap witho
   expect(gestures.map((message) => message.type)).toEqual(["begin", "end", "begin", "end"]);
   expect(gestures[2]).toHaveProperty("x1");
   expect(socket.sent.filter((message) => new Uint8Array(message)[0] === 6)).toHaveLength(1);
+});
+
+test("StrictMode effect cleanup keeps keyboard input usable", async () => {
+  const { client, helperSockets } = await renderIosClient(true, { pid: 1 }, false, false, true);
+  const socket = helperSockets().at(-1)!;
+  socket.readyState = 1;
+  await act(async () => {
+    socket.onopen?.();
+    socket.onmessage?.({ data: Uint8Array.of(0x83).buffer });
+  });
+  expect(client().sendKey({ phase: "down", key: "a", code: "KeyA", repeat: false })).toBe(true);
+  const frames = socket.sent.map((data) => new Uint8Array(data));
+  expect(frames.some((data) => data[0] === 0x06)).toBe(true);
 });
