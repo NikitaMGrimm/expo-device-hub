@@ -398,7 +398,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     : null;
   const { activityStatus, setActivityStatus } = useActivityStatus(activityScope);
   const refreshConfigRef = useRef<(() => void) | null>(null);
-  const refreshDeviceSettingsRef = useRef<(() => void) | null>(null);
   const applyPreviewConfigRef = useRef<((value: PreviewApi | null) => void) | null>(null);
   const configUpdatesReadyRef = useRef(false);
   const streamCapabilities = config ? iosStreamCapabilities(config.initialStreamSettings) : null;
@@ -1845,7 +1844,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       retryDelay = RECONNECT_MS;
       void refresh();
     };
-    refreshDeviceSettingsRef.current = refresh;
     pageDocument?.addEventListener("visibilitychange", onVisibilityChange);
     // Pause reads while the shared control channel is down and read again once
     // it authenticates. Stream ends do not interrupt the channel.
@@ -1863,7 +1861,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       cancelled = true;
       clearTimer();
       stopWatchingControl?.();
-      if (refreshDeviceSettingsRef.current === refresh) refreshDeviceSettingsRef.current = null;
       pageDocument?.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [execWsUrl, execToken, deviceUdid, controlSocket, requestHostUi, resetRead, settleRead]);
