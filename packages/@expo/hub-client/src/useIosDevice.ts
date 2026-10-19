@@ -108,7 +108,6 @@ import { resolveDeviceStreamMode } from "./stream-mode";
 import { useAccessibility } from "./useAccessibility";
 import { useAppPermissions } from "./useAppPermissions";
 import { useAvccStream } from "./useAvccStream";
-import { isCoarsePointer } from "./useCoarsePointer";
 import { type DeviceLocationBackend, useDeviceLocation } from "./useDeviceLocation";
 import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
@@ -711,7 +710,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const stopListening = listenForInputCancellation(cancelInput);
     return () => {
       stopListening();
-      keyboard.dispose();
+      keyboard.cancel();
     };
   }, [cancelInput, keyboard]);
   // Pre-mapped key events (phone-keyboard capture) are paced a few ms apart so
@@ -1442,7 +1441,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (!wsUrl) return;
     hasWsConfigRef.current = false;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-    let hasDisconnected = false;
     const pendingOwner = pendingInputRef.current;
     const initialMessages = pendingOwner.messages;
     pendingOwner.messages = [];
@@ -1451,11 +1449,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       wsUrl,
       {
         onAdmitted() {
-          if (!isCoarsePointer()) {
-            if (hasDisconnected) refreshDeviceSettingsRef.current?.();
-            return;
-          }
-          // Touch viewers need iOS's software keyboard; desktop viewers keep the selected mode.
+          // Keep main's software-character path active for browser-layout typing.
           if (!input.trySend(WS_MSG_HARDWARE_KEYBOARD, { enabled: false })) return false;
           hardwareKeyboardIntentRef.current = { pending: false };
           setHardwareKeyboardConnectedState(false);
@@ -1494,7 +1488,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           }
         },
         onDisconnect() {
-          hasDisconnected = true;
           keyboard.cancelRequests();
           hardwareKeyboardIntentRef.current = { pending: false };
           setHardwareKeyboardConnectedState(null);
