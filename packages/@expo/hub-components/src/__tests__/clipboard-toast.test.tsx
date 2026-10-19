@@ -71,7 +71,7 @@ const PASTING: Shown = {
 };
 const PASTED: Shown = {
   id: 'hub-clipboard-paste',
-  duration: 3000,
+  duration: 1500,
   toast: { action: 'paste', status: 'success', message: 'Pasted into simulator' },
 };
 
@@ -189,11 +189,12 @@ test('Paste sends the browser text and reports serve-sim\'s Pasted into simulato
   ]);
   expect(results()).toEqual([]);
 
+  expect(spies[0]).toHaveBeenLastCalledWith(expect.any(Function), expect.objectContaining({ toasterId: 'hub-clipboard' }));
   await step(() => calls[0].resolve());
   expect(results()).toEqual([
     {
       id: 'hub-clipboard-paste',
-      duration: 3000,
+      duration: 1500,
       toast: { action: 'paste', status: 'success', message: 'Pasted into simulator' },
     },
   ]);
@@ -367,7 +368,7 @@ test('Copy writes the app text to the browser clipboard and reports Copied from 
   expect(results()).toEqual([
     {
       id: 'hub-clipboard-copy',
-      duration: 3000,
+      duration: 1500,
       toast: { action: 'copy', status: 'success', message: 'Copied from simulator' },
     },
   ]);

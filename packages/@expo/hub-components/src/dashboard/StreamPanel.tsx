@@ -9,7 +9,7 @@ import {
 import { bg, border } from '../primitives';
 import { type Device } from './data';
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
-import { type ClipboardRequest, useClipboardToast } from './ClipboardToast';
+import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from './ClipboardToast';
 import { type DeviceFrameAssets } from './deviceFrame';
 import { PhoneFrame } from './PhoneFrame';
 import { ScreenshotToaster, useScreenshotToast } from './ScreenshotToast';
@@ -119,6 +119,9 @@ export function StreamPanel({
             device={device}
             client={screenClient}
             agentInteraction={agentInteraction}
+            onCopy={async () => {
+              if (!client.clipboardPending) await clipboard.copyFromSimulator();
+            }}
             DeviceScreen={DeviceScreen}
             displayScreen={displayScreen}
             showDeviceFrame={showDeviceFrame}
@@ -168,6 +171,7 @@ export function StreamPanel({
               onCopy={() => void clipboard.copyFromSimulator()}
             />
           </div>
+          <ClipboardToaster />
         </div>
       </div>
       <ScreenshotToaster />

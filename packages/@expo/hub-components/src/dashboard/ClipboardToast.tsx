@@ -1,10 +1,35 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
-import { toast as sonnerToast } from 'sonner';
+import { Toaster, toast as sonnerToast } from 'sonner';
 
 import { type DeviceClient, type DeviceClipboardAction } from '@expo/hub-client';
 import { ClipboardPasteIcon, CopyIcon, bg, icon, radius, text, textSize } from '../primitives';
 import { errorMessage, readBrowserClipboard, writeBrowserClipboard } from './browserClipboard';
-import { DEVICE_TOASTER_ID, TOAST_PILL_STYLE } from './ScreenshotToast';
+import { TOAST_PILL_STYLE } from './ScreenshotToast';
+
+const CLIPBOARD_TOASTER_ID = 'hub-clipboard';
+
+/** Clipboard feedback stays centered over the device without intercepting its input. */
+export function ClipboardToaster() {
+  return (
+    <Toaster
+      id={CLIPBOARD_TOASTER_ID}
+      position="bottom-center"
+      style={{
+        position: 'absolute',
+        pointerEvents: 'none',
+        left: '50%',
+        right: 'auto',
+        bottom: 16,
+        width: 'min(320px, calc(100cqw - 32px))',
+        transform: 'translateX(-50%)',
+      }}
+      gap={8}
+      toastOptions={{ unstyled: true, style: { width: '100%' } }}
+      hotkey={[' ']}
+      containerAriaLabel="Clipboard notifications"
+    />
+  );
+}
 
 /**
  * What a clipboard toast says, with serve-sim's statuses. The action picks its icon. serve-sim's
@@ -45,9 +70,8 @@ export const CLIPBOARD_TEXT = {
   simulatorEmptyNotWritten: 'Simulator clipboard is empty. The browser clipboard still has older text',
 } as const;
 
-// A result shows for 3 s, as in serve-sim. serve-sim shows its manual toast for 12 s and keeps its
-// paste-field toast until the user acts. Here the `info` toast, which points to the paste field in
-// the Clipboard section, also shows for 12 s.
+// Keep success brief; errors and manual instructions need longer to read.
+const SUCCESS_DISMISS_MS = 1500;
 const DISMISS_MS = 3000;
 const MANUAL_DISMISS_MS = 12_000;
 
@@ -65,7 +89,7 @@ const PENDING: Record<DeviceClipboardAction, ClipboardToastState> = {
 function show(id: string, toast: ClipboardToastState, duration: number) {
   sonnerToast.custom(() => <ClipboardToast toast={toast} />, {
     id,
-    toasterId: DEVICE_TOASTER_ID,
+    toasterId: CLIPBOARD_TOASTER_ID,
     duration,
   });
 }
@@ -74,7 +98,9 @@ function showResult(toast: ClipboardToastState) {
   show(
     TOAST_IDS[toast.action],
     toast,
-    toast.status === 'info' || toast.status === 'manual' ? MANUAL_DISMISS_MS : DISMISS_MS,
+    toast.status === 'success'
+      ? SUCCESS_DISMISS_MS
+      : toast.status === 'info' || toast.status === 'manual' ? MANUAL_DISMISS_MS : DISMISS_MS,
   );
 }
 

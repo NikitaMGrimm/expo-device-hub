@@ -46,7 +46,7 @@ function download(url: string, filename: string): void {
 
 export const DEVICE_TOASTER_ID = 'hub-device';
 
-/** Where the screenshot and clipboard toasts render: the bottom-right corner of the viewport, clear of the toolbar. */
+/** Screenshot notifications render at the bottom-right of the viewport, clear of the device. */
 export function ScreenshotToaster() {
   return (
     <Toaster

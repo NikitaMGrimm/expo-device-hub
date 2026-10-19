@@ -12,6 +12,8 @@ import {
   ClipboardPasteIcon,
   ControlButton,
   CopyIcon,
+  Dropdown,
+  DropdownItem,
   HomeIcon,
   RefreshIcon,
   RotateIcon,
@@ -52,8 +54,8 @@ function ControlGroup({ children }: { children: ReactNode }) {
 
 /**
  * Controls under the device stream. Both platforms share one toolbar: a pill
- * with Save · Theme · Home · Reload, a Copy · Paste pill for a device with
- * clipboard support (serve-sim's Clipboard menu order, before Rotate), plus a
+ * with Save · Theme · Home · Reload, a Clipboard menu for a device with
+ * clipboard support (Copy then Paste, as in serve-sim), plus a
  * separate Rotate button. Each button
  * shows its label as a tooltip on hover. Device-level actions (Android Back and
  * Recents keys, shutting down or removing the device) live in the inspector's
@@ -144,24 +146,35 @@ export function StreamControls({
       </ControlGroup>
       {clipboard && (clipboard.paste || clipboard.copy) && (
         <ControlGroup>
-          {clipboard.copy && (
-            <ControlButton
-              icon={<CopyIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-              label="Copy from Simulator"
-              disabled={clipboardDisabled}
-              onClick={clipboardDisabled ? undefined : onCopy}
-              style={clipboardDisabled ? { color: text.tertiary, cursor: 'not-allowed' } : undefined}
-            />
-          )}
-          {clipboard.paste && (
-            <ControlButton
-              icon={<ClipboardPasteIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-              label="Paste from Device"
-              disabled={clipboardDisabled}
-              onClick={clipboardDisabled ? undefined : onPaste}
-              style={clipboardDisabled ? { color: text.tertiary, cursor: 'not-allowed' } : undefined}
-            />
-          )}
+          <Dropdown
+            side="top"
+            align="center"
+            disabled={clipboardDisabled}
+            trigger={
+              <ControlButton
+                icon={<ClipboardPasteIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+                label="Clipboard"
+                disabled={clipboardDisabled}
+                style={clipboardDisabled ? { color: text.tertiary, cursor: 'not-allowed' } : undefined}
+              />
+            }>
+            {clipboard.copy && (
+              <DropdownItem
+                label="Copy from Simulator"
+                Icon={CopyIcon}
+                disabled={clipboardDisabled}
+                onSelect={onCopy}
+              />
+            )}
+            {clipboard.paste && (
+              <DropdownItem
+                label="Paste from Device"
+                Icon={ClipboardPasteIcon}
+                disabled={clipboardDisabled}
+                onSelect={onPaste}
+              />
+            )}
+          </Dropdown>
         </ControlGroup>
       )}
       <ControlGroup>

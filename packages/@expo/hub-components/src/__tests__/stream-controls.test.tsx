@@ -54,7 +54,7 @@ describe('StreamControls', () => {
     expect(markup.indexOf('aria-label="Rotate"')).toBeGreaterThan(markup.lastIndexOf('border-radius:var(--expo-radius-xl)'));
   });
 
-  test('shows the clipboard pill before Rotate, Copy first as in serve-sim, with only the actions the device offers', () => {
+  test('shows one Clipboard menu before Rotate when the device offers either action', () => {
     const labels = (clipboard: { paste: boolean; copy: boolean } | false) =>
       buttonTags(
         renderToStaticMarkup(
@@ -65,12 +65,11 @@ describe('StreamControls', () => {
 
     expect(labels({ paste: true, copy: true })).toEqual([
       ...base,
-      'Copy from Simulator',
-      'Paste from Device',
+      'Clipboard',
       'Rotate',
     ]);
-    expect(labels({ paste: true, copy: false })).toEqual([...base, 'Paste from Device', 'Rotate']);
-    expect(labels({ paste: false, copy: true })).toEqual([...base, 'Copy from Simulator', 'Rotate']);
+    expect(labels({ paste: true, copy: false })).toEqual([...base, 'Clipboard', 'Rotate']);
+    expect(labels({ paste: false, copy: true })).toEqual([...base, 'Clipboard', 'Rotate']);
     expect(labels({ paste: false, copy: false })).toEqual([...base, 'Rotate']);
     expect(labels(false)).toEqual([...base, 'Rotate']);
 
@@ -84,7 +83,7 @@ describe('StreamControls', () => {
     expect([...markup.matchAll(/<div style="[^"]*border-radius:var\(--expo-radius-xl\)[^"]*"/g)]).toHaveLength(3);
   });
 
-  test.each(['paste', 'copy'] as const)('disables both clipboard buttons while %s is pending', (pending) => {
+  test.each(['paste', 'copy'] as const)('disables the Clipboard menu while %s is pending', (pending) => {
     const markup = renderToStaticMarkup(
       <StreamControls
         appearance="light"
@@ -94,7 +93,7 @@ describe('StreamControls', () => {
       />,
     );
     for (const tag of buttonTags(markup)) {
-      if (tag.includes('aria-label="Copy from Simulator"') || tag.includes('aria-label="Paste from Device"')) {
+      if (tag.includes('aria-label="Clipboard"')) {
         expect(tag).toContain('disabled=""');
         expect(tag).toContain('cursor:not-allowed');
         expect(tag).toContain('color:var(--expo-theme-text-tertiary)');
@@ -126,7 +125,9 @@ describe('StreamControls', () => {
 });
 
 describe('StreamPanel', () => {
-  test('offers the clipboard actions of its client in the toolbar', () => {
+  test('offers the clipboard actions of its client and blocks Copy while an action is pending', async () => {
+    let onCopy: DeviceScreenProps['onCopy'];
+    let copies = 0;
     const device: Device = {
       id: 'ios',
       name: 'iPhone 17 Pro',
@@ -141,29 +142,31 @@ describe('StreamPanel', () => {
       renderToStaticMarkup(
         <StreamPanel
           device={device}
-          client={{ status: 'streaming', capabilities: { clipboard }, clipboardPending } as DeviceClient}
-          DeviceScreen={() => null}
+          client={{ status: 'streaming', capabilities: { clipboard }, clipboardPending, copyText: async () => { copies++; return 'selected'; } } as DeviceClient}
+          DeviceScreen={(props) => { onCopy = props.onCopy; return null; }}
           displayScreen={() => null}
         />,
       );
 
-    expect(toolbar({ paste: true, copy: false })).toContain('aria-label="Paste from Device"');
-    expect(toolbar({ paste: true, copy: false })).not.toContain('aria-label="Copy from Simulator"');
-    expect(toolbar(false)).not.toContain('aria-label="Paste from Device"');
+    expect(toolbar({ paste: true, copy: false })).toContain('aria-label="Clipboard"');
+    expect(toolbar(false)).not.toContain('aria-label="Clipboard"');
     for (const pending of ['paste', 'copy'] as const) {
       const buttons = buttonTags(toolbar({ paste: true, copy: true }, pending));
-      expect(buttons.find((tag) => tag.includes('aria-label="Copy from Simulator"'))).toContain('disabled=""');
-      expect(buttons.find((tag) => tag.includes('aria-label="Paste from Device"'))).toContain('disabled=""');
+      expect(buttons.find((tag) => tag.includes('aria-label="Clipboard"'))).toContain('disabled=""');
+      await onCopy!();
+      expect(copies).toBe(0);
     }
     const idle = buttonTags(toolbar({ paste: true, copy: true }));
-    expect(idle.find((tag) => tag.includes('aria-label="Copy from Simulator"'))).not.toContain('disabled');
-    expect(idle.find((tag) => tag.includes('aria-label="Paste from Device"'))).not.toContain('disabled');
+    expect(idle.find((tag) => tag.includes('aria-label="Clipboard"'))).not.toContain('disabled');
+    await onCopy!();
+    expect(copies).toBe(1);
   });
 
-  test('gives DeviceScreen a pasteText that reports Command+V through the clipboard toasts', async () => {
+  test('gives DeviceScreen the host clipboard handlers for Command+V and Command+C', async () => {
     const pastes: Array<string | undefined> = [];
     const pasteText = async (text?: string) => void pastes.push(text);
     let screenClient: DeviceScreenProps['client'] | undefined;
+    let onCopy: DeviceScreenProps['onCopy'];
     renderToStaticMarkup(
       <StreamPanel
         device={{
@@ -183,14 +186,16 @@ describe('StreamPanel', () => {
             pasteText,
           } as unknown as DeviceClient
         }
-        DeviceScreen={({ client }) => {
-          screenClient = client;
+        DeviceScreen={(props) => {
+          screenClient = props.client;
+          onCopy = props.onCopy;
           return null;
         }}
         displayScreen={() => null}
       />,
     );
 
+    expect(onCopy).toBeFunction();
     expect(screenClient?.pasteText).toBeDefined();
     expect(screenClient?.pasteText).not.toBe(pasteText);
     await screenClient!.pasteText('typed');
