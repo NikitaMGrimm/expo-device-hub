@@ -1,11 +1,11 @@
-import { forwardRef, useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useRef, useState } from "react";
 
-import { type DeviceClient, type DeviceClipboardAction } from '@expo/hub-client';
-import { Button, bg, border, font, isFocusVisible, radius, text, textSize } from '../primitives';
-import { copyFieldSelection, errorMessage, writeBrowserClipboard } from './browserClipboard';
-import { CLIPBOARD_TEXT, type ClipboardRequest, HARDWARE_KEYBOARD_NOTE } from './ClipboardToast';
-import { CollapsibleSection, SECTION_TRANSITION_MS } from './CollapsibleSection';
-import { SectionNote } from './SectionNote';
+import { type DeviceClient, type DeviceClipboardAction } from "@expo/hub-client";
+import { Button, bg, border, font, isFocusVisible, radius, text, textSize } from "../primitives";
+import { copyFieldSelection, errorMessage, writeBrowserClipboard } from "./browserClipboard";
+import { CLIPBOARD_TEXT, type ClipboardRequest, HARDWARE_KEYBOARD_NOTE } from "./ClipboardToast";
+import { CollapsibleSection, SECTION_TRANSITION_MS } from "./CollapsibleSection";
+import { SectionNote } from "./SectionNote";
 
 /**
  * Show the text that the device app copies, and paste typed text into the app, in the order of
@@ -26,7 +26,7 @@ export function ClipboardSection({
   onRequestHandled?: () => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   // Each action of the section has its own state, so a Copy during a Paste keeps Send disabled.
   const [pasting, setPasting] = useState(false);
@@ -41,7 +41,7 @@ export function ClipboardSection({
     if (!request) return;
     setError(null);
     setOpen(true);
-    if (request.action === 'copy') {
+    if (request.action === "copy") {
       setCopied(request.text);
       setCopyNote(null);
     }
@@ -54,12 +54,12 @@ export function ClipboardSection({
   // the toast in the corner.
   useEffect(() => {
     if (!open || !focusField) return;
-    const field = focusField === 'paste' ? pasteField.current : copiedField.current;
+    const field = focusField === "paste" ? pasteField.current : copiedField.current;
     if (!field) return;
     setFocusField(null);
     field.focus({ preventScroll: true });
-    if (focusField === 'copy') field.select();
-    window.setTimeout(() => field.scrollIntoView({ block: 'center' }), SECTION_TRANSITION_MS);
+    if (focusField === "copy") field.select();
+    window.setTimeout(() => field.scrollIntoView({ block: "center" }), SECTION_TRANSITION_MS);
   }, [open, focusField]);
 
   const capabilities = client.capabilities.clipboard;
@@ -71,7 +71,7 @@ export function ClipboardSection({
     setError(null);
     try {
       await client.pasteText(value);
-      setDraft((current) => (current === value ? '' : current));
+      setDraft((current) => (current === value ? "" : current));
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -107,7 +107,9 @@ export function ClipboardSection({
       setCopyNote(CLIPBOARD_TEXT.copied);
       return;
     }
-    setCopyNote(`${CLIPBOARD_TEXT.copyFailed}. Press Command+C or Ctrl+C to copy the selected text`);
+    setCopyNote(
+      `${CLIPBOARD_TEXT.copyFailed}. Press Command+C or Ctrl+C to copy the selected text`,
+    );
   }
 
   return (
@@ -119,8 +121,18 @@ export function ClipboardSection({
           </Button>
           {copied !== null && (
             <>
-              <ClipboardTextField ref={copiedField} ariaLabel="Copied text" value={copied} readOnly />
-              <Button theme="tertiary" size="xs" disabled={!copied} onClick={() => void copyToBrowser()}>
+              <ClipboardTextField
+                ref={copiedField}
+                ariaLabel="Copied text"
+                value={copied}
+                readOnly
+              />
+              <Button
+                theme="tertiary"
+                size="xs"
+                disabled={!copied}
+                onClick={() => void copyToBrowser()}
+              >
                 Copy
               </Button>
             </>
@@ -143,7 +155,8 @@ export function ClipboardSection({
             theme="secondary"
             size="xs"
             disabled={!draft || pasting}
-            onClick={() => void paste()}>
+            onClick={() => void paste()}
+          >
             Send
           </Button>
         </div>
@@ -151,7 +164,7 @@ export function ClipboardSection({
       {copying && <SectionNote role="status">{CLIPBOARD_TEXT.copying}</SectionNote>}
       {pasting && <SectionNote role="status">{CLIPBOARD_TEXT.pasting}</SectionNote>}
       {error && <SectionNote role="alert">{error}</SectionNote>}
-      {copied === '' && <SectionNote>{CLIPBOARD_TEXT.simulatorEmpty}</SectionNote>}
+      {copied === "" && <SectionNote>{CLIPBOARD_TEXT.simulatorEmpty}</SectionNote>}
       {copyNote && <SectionNote role="status">{copyNote}</SectionNote>}
       {client.hardwareKeyboardConnected === false && (
         <SectionNote>{HARDWARE_KEYBOARD_NOTE}</SectionNote>
@@ -161,11 +174,11 @@ export function ClipboardSection({
 }
 
 const GROUP_STYLE = {
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'flex-start',
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "flex-start",
   gap: 8,
-  padding: '4px 0 12px',
+  padding: "4px 0 12px",
 } as const;
 
 const ClipboardTextField = forwardRef<
@@ -199,23 +212,23 @@ const ClipboardTextField = forwardRef<
       onFocus={(event) => setFocused(isFocusVisible(event))}
       onBlur={() => setFocused(false)}
       onKeyDown={(event) => {
-        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) onSubmit?.();
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) onSubmit?.();
       }}
       style={{
         ...textSize.sm,
-        display: 'block',
-        width: '100%',
-        boxSizing: 'border-box',
-        padding: '6px 10px',
+        display: "block",
+        width: "100%",
+        boxSizing: "border-box",
+        padding: "6px 10px",
         border: `1px solid ${border.default}`,
         borderRadius: radius.lg,
-        outline: 'none',
+        outline: "none",
         backgroundColor: bg.element,
-        boxShadow: focused ? `0 0 0 2px ${border.secondary}` : 'none',
+        boxShadow: focused ? `0 0 0 2px ${border.secondary}` : "none",
         color: text.default,
         caretColor: text.default,
         fontFamily: font.mono,
-        resize: 'vertical',
+        resize: "vertical",
       }}
     />
   );

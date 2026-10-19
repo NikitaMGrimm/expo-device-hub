@@ -36,8 +36,10 @@ The iOS adapter uses the admission socket [observed: `createInputSocket` call in
 
 - After admission, a touch client (coarse pointer) disconnects the Simulator's hardware keyboard so that iOS shows its software keyboard. A desktop client leaves the selected mode alone, matching serve-sim's browser client [observed: `onAdmitted` in `useIosDevice.ts`; serve-sim `client/client.tsx`].
 - The setting is shared across viewers. A touch admission or a manual setting changes it for everyone; desktop admission does not choose a mode. Settings polls reconcile `hardwareKeyboardConnected` with the backend every 5 s, and desktop input re-admission requests immediate readback. A read that overlaps a touch admission, disconnect, or manual toggle cannot undo that newer intent. A read started before a touch initialization finishes can briefly report the prior mode; the next poll corrects it [observed: `hardwareKeyboardIntentRef` and the settings refresh in `useIosDevice.ts`].
+- Touch admission sends its hardware-keyboard-off setup frame directly before flushing queued controls. The helper serializes the setting change with subsequent input and gives the guest keyboard a three-second visibility window before a software-character attempt. The helper uses a bounded read-only keyboard probe rather than a full UI snapshot, and a setup revision prevents a new transition from accepting an older probe result. A stalled visibility read cannot hold the shared input queue past that window or schedule late typing; while its single read remains pending, input retains HID fallback. Failed setup sends close the connection and retain fresh pending input for retry [observed: `admit` in `input-socket.ts`; `onAdmitted` in `useIosDevice.ts`; tag `0x0e` in serve-sim `device-session.ts`].
 - A refusal notice clears when a socket is admitted. A config update for the same helper does not clear it. A replaced helper (new `pid` or exec token) gets a new input socket, which clears a client-limit notice and starts a new refusal grace.
 - A lost-input notice expires 5 s after the refusal, also when a socket is admitted sooner or the helper is replaced, because neither brings back lost commands. Selecting another device clears it at once, before that device's config arrives, and so does a new input URL. A restarting helper that briefly reports no config does not [observed: `lostInputTimerRef` in `useIosDevice.ts`]. serve-sim shows it as a toast with the default duration, and dismisses it early only when its input URL changes [observed: `client/client.tsx`, `client/components/app-toasts.tsx`].
+- Fresh input waits through initial discovery and temporary null configs for the same helper. The hook transfers unsent messages without resetting their 1.5 s age or 32-message bound; a requested device, server, token, or known helper identity change discards them [observed: `pendingInputRef` in `useIosDevice.ts`; `takePending` in `input-socket.ts`].
 - When the helper is replaced at the same URL (new `pid` or exec token), queued input is dropped. Input belongs to the helper that was running when the user acted [confirmed] (Gabe Debes, 2026-10-07).
 - After a disconnect, the adapter waits for the reconnect (1.5 s). If exec-ws has not delivered a config by then, it runs HTTP discovery to recover rotated credentials.
 
@@ -45,8 +47,9 @@ The iOS adapter uses the admission socket [observed: `createInputSocket` call in
 
 `createControlSocket` owns one exec-ws connection for one client identity (URL and token), never for the whole module [observed: `control-socket.ts`].
 
-- At most 8 requests are in flight. serve-sim serves 8 action requests per control connection [observed: `MAX_ACTIONS_IN_FLIGHT_PER_SOCKET` in `socket/server-control.ts`].
-- A health probe runs every 5 s, and a probe without a reply in 5 s closes the connection. A connection attempt also stops after 5 s.
+- HubClient queues requests at a client-side limit of 8 in flight, matching serve-sim's server limit (`MAX_ACTIONS_IN_FLIGHT_PER_SOCKET` in `socket/server-control.ts`). The serve-sim browser client does not impose this queue [observed: `control-socket.ts`; `socket/client-control.ts`].
+- A sent request keeps its server slot after caller timeout or abort, until the server replies or the connection fails. If all 8 slots belong to abandoned requests, queued and new requests fail immediately with "too many actions in flight on this connection". Health probes still run, subscriptions stay connected, and a late server reply makes its slot usable again. Writes are never replayed [observed: `sendRequests` and `inFlight` in `control-socket.ts`].
+- HubClient adds a health probe every 5 s; a probe without a reply in 5 s closes the connection. serve-sim's browser client has no health probe. Both clients stop a connection attempt after 5 s [observed: `control-socket.ts`; `socket/client-control.ts`].
 - Each subscription retries by itself after the server ends it. One ended subscription does not close the others.
 
 serve-sim's client uses the same 5 s connect timeout and 2 s stream retry [observed: `socket/client-control.ts`].
@@ -62,19 +65,32 @@ Settings, host actions, logs, events, activity metrics and config updates share 
 
 ## Keyboard input
 
-When the shift key makes a printable character, the client sends the character with `shifted: true`, in addition to the HID usage. serve-sim types it through the software keyboard when the Simulator's hardware keyboard is off and the device has no hinge-angle support. Otherwise, or when software typing fails, it sends the HID usage [observed: `iosMessageForKeyboardInput` in `keyboard.ts`; serve-sim `client/client.tsx`, tag `0x06` in `device-session.ts`].
+HubClient sends `key` for every single-character printable keydown without Control, Meta, or Alt, in addition to its physical HID usage. Shifted non-space characters retain `shifted: true`; releases, shortcuts, navigation keys, and dead keys keep physical HID semantics [observed: `iosMessageForKeyboardInput` in `keyboard.ts`; `DeviceScreen.tsx`].
+
+The updated serve-sim helper uses the software-keyboard character path for shifted characters or when the character does not match that physical US key, while matching unshifted US characters stay on the fast HID path. This requires the Simulator hardware keyboard to be off and the device to have no hinge-angle support. Hardware-keyboard-on, hinge-capable devices, older helpers, and rejected software-keyboard characters retain HID fallback; characters absent from the Simulator keyboard remain a limitation [observed: tag `0x06` in `device-session.ts`; `US_KEYBOARD_MAP` in `text-to-keys.ts`].
+
+This extends serve-sim's browser client, which supplies character metadata only for shifted characters. HubClient also supplies unshifted metadata so a German-layout `KeyY` can type `z` instead of the physical US `y` [observed: `keyboard.ts`; serve-sim `client/client.tsx`].
 
 ## Input ownership
 
-When a browser interaction loses focus, or the client changes device, queued input that it owns is cancelled [observed: `cancelInput` in `types.ts`, `useIosDevice.ts`, `useAndroidDevice.ts`]:
+Input callbacks belong to a committed connection scope and its known helper, rather than the complete config object. Stream settings and ICE metadata do not retire them. Initial discovery binds the early queue without replacing that owner; temporary null discovery retains the known helper and original queue age. A requested device, server, enabled state, token, or known helper identity change retires the callbacks, even when the same values later return [observed: `inputOwner` and `ownsInput` in `useIosDevice.ts`; `inputIdentity` in `useAndroidDevice.ts`].
 
-- A gesture that has both `begin` and `end` stays in the queue, in its order and with its expiry. A gesture without its `end` is removed, so that the device does not keep a held touch.
-- Paced key input stops [observed: `paced-key-sender.ts`].
-- If a send fails, the commands that were not sent stay in the queue for the next admission [observed: `ws-send-queue.ts`].
+Local surface blur releases physical keys only while all active pointers are captured. It keeps captured gestures and paced phone-keyboard input, so `KeyboardCapture` can restore focus to its hidden input without ending a swipe. If capture failed, local blur or leaving the surface cancels the unfinished gesture because outside releases cannot reach the surface. Unexpected capture loss and pointer cancellation also abandon unfinished input [observed: `onBlur` in `DeviceScreen.tsx`; `onFocusOut` in `KeyboardCapture.tsx`].
+
+Window blur, a hidden tab, page hide, unmount, or a real input-owner change cancels abandoned input [observed: `listenForInputCancellation`, `cancelBrowserInput`, and the adapters' `cancelInput`]:
+
+- Buffered wheel frames and paced key batches stop before adapter queues are cleared. Held keys/touches are released only through their original owner.
+- Unsent keys and scrolls are discarded from both the socket queue and any pre-discovery queue; they must not type or scroll later after the browser has left the interaction.
+- Converting a single touch to a two-finger gesture releases the admitted single touch without retaining its unsent prefix as a completed tap (`TouchSample.cancelled`). It also cancels pending single-touch movement and releases at the last forwarded single-touch point, while starting the pinch at the current two-finger positions.
+- Completed gesture `begin`/`end` pairs remain queued as completed actions, in their original order and with the original 1.5 s expiry. Incomplete gestures are removed before a synthetic release can turn them into completed taps.
+
+This differs from serve-sim's window-blur handler, which cancels paced keyboard work and releases held physical keys while retaining unsent socket messages. HubClient's full queue cancellation applies to the global abandonment events above, not to focus transfers within the page [observed: `client/client.tsx`'s `blur` handler and `utils/ws-send-queue.ts` in ServeSim; `cancelInput` in HubClient].
 
 ## Input feedback
 
-`DeviceScreen` shows `inputError` as a status line over the video. The video stays visible, because video and input use different connections [observed: `DeviceScreen.tsx`].
+HubClient exposes `error` and `inputError`; product notices and their styling belong to consumers, not hub-client components. `DeviceScreenClient` includes `inputError`, and the Hub renders its non-interactive input notice in `hub-components`' `PhoneFrame` with design tokens, without hiding live media [observed: `useDeviceScreenClient.ts`, `PhoneFrame.tsx`]. Other consumers choose their own presentation.
+
+An Android input-only outage does not demote healthy WebRTC playback to an error. A failed peer still recovers and can reach an error after its reconnect grace [observed: `useAndroidDevice.ts` and its mounted restart tests].
 
 ## Clipboard
 
@@ -85,6 +101,7 @@ The iOS client pastes text into the device and copies text from it with the serv
 - Copy waits in the same queue. It sends a `0x11` barrier with a request ID, and after the `0x91` reply it calls `POST /api/pasteboard?copy=1`. Keys typed during Copy wait for it, so they cannot change the selection before the server presses Command+C [observed: `readAfterInput`, `copySimulatorText`].
 - The Copy route accepts only a bearer token and a browser Origin, not the session cookie. So the client sends the exec token from `/api` as a bearer, preserving it even when an optional session token differs [observed: serve-sim `src/middleware.ts`].
 - The client sends `0x12` and `0x11` only on an admitted socket, and never sends them again on a new socket. A disconnect, a device change or a replaced helper fails every request that has no reply, and drops the keys that wait behind it. Each dispatched clipboard request has a 150 s client deadline, as in serve-sim, including the Copy read after its barrier. This leaves room for first-use helper installation and native command deadlines; a shorter client deadline can report failure before a server action still completes. Expiry releases queued input and aborts a Copy read; late replies and results are ignored, and nothing is replayed. This bounds the client wait, not the server operation, which may still finish.
+- The ordered queue belongs to the current input owner across discovery gaps. Transport cleanup cancels uncertain clipboard work and keys waiting behind it; when no clipboard request is pending, ordinary paced typing keeps main's existing discovery/reconnect queue [observed: `keyboard` in `useIosDevice.ts`, `cancelRequests` in `ordered-keyboard-input.ts`].
 - serve-sim closes an input socket that sends a frame larger than 4 MiB, so the client refuses a larger Paste before it sends it.
 - When focus loss cancels input, key presses that wait behind a Paste or Copy are dropped. Key releases stay, because their keys can already be down on the device.
 - `clipboardPending`, `clipboardError` and `clipboardWarning` show the latest action only. An older action that ends later does not change them, but its own call still resolves or rejects. `clipboardAction` retains the latest action kind after completion so a batched action still labels its warning correctly. `clipboardActionId` changes each time an action starts, so the page sees a new Paste also while an older Paste keeps `clipboardPending` at `paste`.
@@ -105,20 +122,21 @@ The Hub dashboard reads and writes the browser clipboard for HubClient. Paths in
 - When the browser does not read or write its clipboard (no API, permission denied, or page not focused), the dashboard opens the inspector's Clipboard section. There the user pastes into a text field, or copies the text from a read-only field. The section's Copy button first tries `navigator.clipboard.writeText()`, then selects the field and runs `document.execCommand('copy')`, as serve-sim's copy fallback (`copyTextViaSelection`). Only when both fail does it say "Copy failed. Press Command+C or Ctrl+C to copy the selected text", with the text still selected. The section needs no clipboard permission [observed: `copyFieldSelection` in `browserClipboard.ts`; serve-sim `client/utils/share-link.ts`]. It takes the place of serve-sim's paste field and Copy button in a toast, and uses their labels: Send for the paste field, and Copy for the copied text [observed: `ClipboardSection.tsx`; `onClipboardFallback` in `packages/expo-device-hub/src/Dashboard.tsx`; serve-sim `client/components/app-toasts.tsx`].
 - The toasts use serve-sim's texts and statuses [observed: `CLIPBOARD_TEXT` in `ClipboardToast.tsx`; serve-sim `client/hooks/use-clipboard-toast.tsx`]:
 
-  | Step | Status | Text |
-  | --- | --- | --- |
-  | Paste in flight, after the browser clipboard is read, or a Command+V paste with text | pending | Pasting into the simulator… |
-  | Paste done | success | Pasted into simulator |
-  | Browser clipboard empty | success | Device clipboard is empty |
-  | Browser clipboard not readable | info | Paste in the Clipboard section to send it to the simulator |
-  | Copy in flight | pending | Reading simulator clipboard… |
-  | Copy done | success | Copied from simulator, or Simulator clipboard is empty |
-  | Empty Copy, browser clipboard not writable | error | Simulator clipboard is empty. The browser clipboard still has older text |
-  | Copy, browser clipboard not writable | manual | Ready — one click to copy in the Clipboard section |
-  | Paste or Copy failed | error | The client's error |
-  | Key that serve-sim could not release | error | The client's `clipboardWarning`, in a toast of its own |
+  | Step                                                                                 | Status  | Text                                                                     |
+  | ------------------------------------------------------------------------------------ | ------- | ------------------------------------------------------------------------ |
+  | Paste in flight, after the browser clipboard is read, or a Command+V paste with text | pending | Pasting into the simulator…                                              |
+  | Paste done                                                                           | success | Pasted into simulator                                                    |
+  | Browser clipboard empty                                                              | success | Device clipboard is empty                                                |
+  | Browser clipboard not readable                                                       | info    | Paste in the Clipboard section to send it to the simulator               |
+  | Copy in flight                                                                       | pending | Reading simulator clipboard…                                             |
+  | Copy done                                                                            | success | Copied from simulator, or Simulator clipboard is empty                   |
+  | Empty Copy, browser clipboard not writable                                           | error   | Simulator clipboard is empty. The browser clipboard still has older text |
+  | Copy, browser clipboard not writable                                                 | manual  | Ready — one click to copy in the Clipboard section                       |
+  | Paste or Copy failed                                                                 | error   | The client's error                                                       |
+  | Key that serve-sim could not release                                                 | error   | The client's `clipboardWarning`, in a toast of its own                   |
 
   The toast icon has the color of serve-sim's status dot: info for pending and info, success, warning for manual, and danger for error. Hub success shows for 1.5 s, rather than serve-sim's 3 s; errors show for 3 s. Manual shows for 12 s, as serve-sim's manual toast does. The info toast that points to the Clipboard section also shows for 12 s. It takes the place of serve-sim's paste-field toast, which stays until the user acts. Only the two texts that point to the Clipboard section are not serve-sim's own.
+
 - A toolbar action reports its result from its own call, because only the call knows the browser step and keeps its result after a newer action replaces the fields. `StreamPanel` gives `DeviceScreen` the hook's `pasteText` and `onCopy`, so Command+V and Command+C use the same browser clipboard and feedback paths as the menu. As serve-sim's `pasteText`, a Command+V paste with text shows Pasting into the simulator… and then Pasted into simulator. A Command+V without text, where the device pastes its own clipboard, shows only its error, as serve-sim's fallback does [observed: `useClipboardToast`, `StreamPanel.tsx`; serve-sim `client/client.tsx`].
 - A Paste that a replaced helper interrupts fails (see Clipboard above), so a Command+V paste shows an error toast, not a success [observed: `useClipboardToast`; `clipboardIdentity` in `useIosDevice.ts`].
 - The Clipboard section shows the result of its own Paste and Copy in its notes, and no toast shows it, so each error shows once. From the client fields, the toasts show only `clipboardWarning`, for every action [observed: `useClipboardToast`, `ClipboardSection.tsx`].
@@ -138,4 +156,4 @@ Clipboard fallbacks belong to the selected device and are discarded on a selecti
 
 ## Open questions
 
-- `DeviceScreen` shows the input notice with fixed colors (`rgba(0, 0, 0, 0.75)`, `#fca5a5`). LLP 0000 [constraint 3](0000-expo-device-hub.explainer.md#constraints-you-must-not-simplify-away) forbids fixed colors in the Hub UI. Does that rule apply to `DeviceScreen`, which the Hub and the Expo website both render?
+None at this time.

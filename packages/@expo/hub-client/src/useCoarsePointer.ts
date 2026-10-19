@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
-const QUERY = '(pointer: coarse)';
+const QUERY = "(pointer: coarse)";
 
 export function isCoarsePointer(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia?.(QUERY).matches === true;
+  return typeof window !== "undefined" && window.matchMedia?.(QUERY).matches === true;
 }
 
 /**
@@ -17,8 +17,8 @@ export function useCoarsePointer(): boolean {
     const mql = window.matchMedia?.(QUERY);
     if (!mql) return;
     const onChange = () => setCoarse(mql.matches);
-    mql.addEventListener('change', onChange);
-    return () => mql.removeEventListener('change', onChange);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
   }, []);
   return coarse;
 }

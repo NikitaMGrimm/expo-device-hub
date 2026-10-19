@@ -73,12 +73,17 @@ export async function pruneStaleEntriesAsync(
 /** Child output is useful, but a stack trace prints the operator's checkout. Keep the message. */
 export function redactHostPaths(text: string): string {
   if (!text) return text;
-  return text.split(homedir()).join("~").replace(/\/(?:private\/)?var\/folders\/\S+/g, "<tmp>");
+  return text
+    .split(homedir())
+    .join("~")
+    .replace(/\/(?:private\/)?var\/folders\/\S+/g, "<tmp>");
 }
 
 export function installAppInvocation(udid: string, path: string): Invocation {
   return { file: "xcrun", args: ["simctl", "install", udid, path] };
 }
+
+const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 
 export function runInvocation({ file, args, timeoutMs }: Invocation): Promise<HostActionResult> {
   const deadlineMs = timeoutMs ?? actionTimeoutMs();
@@ -86,12 +91,24 @@ export function runInvocation({ file, args, timeoutMs }: Invocation): Promise<Ho
     execFile(
       file,
       args,
-      { maxBuffer: 16 * 1024 * 1024, timeout: deadlineMs, killSignal: "SIGKILL" },
+      { maxBuffer: MAX_OUTPUT_BYTES, timeout: deadlineMs, killSignal: "SIGKILL" },
       (err, stdout, stderr) => {
         const code = (err as NodeJS.ErrnoException | null)?.code;
+        if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+          resolve({
+            stdout: "",
+            stderr:
+              `The ${basename(file)} command printed more than ${MAX_OUTPUT_BYTES / 1024 ** 2} MiB to stdout or stderr. ` +
+              "Ask for less output, or use a smaller file, and try again.",
+            exitCode: 1,
+          });
+          return;
+        }
         // `killed` distinguishes the deadline's own kill from a SIGKILL the operator or the OOM
         // killer sent, which must not be reported as "the command did not finish in time".
-        const spawned = err as (NodeJS.ErrnoException & { signal?: string; killed?: boolean }) | null;
+        const spawned = err as
+          | (NodeJS.ErrnoException & { signal?: string; killed?: boolean })
+          | null;
         if (spawned?.killed === true && spawned.signal === "SIGKILL") {
           resolve({
             stdout: stdout.toString(),

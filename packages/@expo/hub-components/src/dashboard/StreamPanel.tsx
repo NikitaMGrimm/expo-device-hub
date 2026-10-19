@@ -1,19 +1,19 @@
-import { type ComponentType, useLayoutEffect, useRef, useState } from 'react';
+import { type ComponentType, useLayoutEffect, useRef, useState } from "react";
 
 import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
   type ScreenSize,
-} from '@expo/hub-client';
-import { bg, border } from '../primitives';
-import { type Device } from './data';
-import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
-import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from './ClipboardToast';
-import { type DeviceFrameAssets } from './deviceFrame';
-import { PhoneFrame } from './PhoneFrame';
-import { ScreenshotToaster, useScreenshotToast } from './ScreenshotToast';
-import { STREAM_CONTROLS_HEIGHT, StreamControls } from './StreamControls';
+} from "@expo/hub-client";
+import { bg, border } from "../primitives";
+import { type Device } from "./data";
+import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
+import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
+import { type DeviceFrameAssets } from "./deviceFrame";
+import { PhoneFrame } from "./PhoneFrame";
+import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
+import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
 
 /** Space between the title pill and the top of the device frame. */
 const TITLE_GAP = 32;
@@ -64,7 +64,7 @@ export function StreamPanel({
   const [controlsHeight, setControlsHeight] = useState(STREAM_CONTROLS_HEIGHT);
   useLayoutEffect(() => {
     const element = controlsRef.current;
-    if (!element || typeof ResizeObserver === 'undefined') return;
+    if (!element || typeof ResizeObserver === "undefined") return;
     const measure = () => setControlsHeight(element.getBoundingClientRect().height);
     measure();
     const observer = new ResizeObserver(measure);
@@ -73,11 +73,11 @@ export function StreamPanel({
   }, []);
   const captureScreenshot = useScreenshotToast(client, device.name);
   const setting = client.deviceSettings?.appearance;
-  const appearance = setting === 'dark' || setting === 'light' ? setting : null;
+  const appearance = setting === "dark" || setting === "light" ? setting : null;
   const appearanceDisabled =
     appearance === null ||
-    client.deviceSettingsStatus !== 'ready' ||
-    client.deviceSettingsPending.has('appearance');
+    client.deviceSettingsStatus !== "ready" ||
+    client.deviceSettingsPending.has("appearance");
   const clipboard = useClipboardToast(client, device.id, onClipboardFallback);
   // Command+V in the device screen reports through the clipboard toasts, as in serve-sim.
   const screenClient: DeviceClient = { ...client, pasteText: clipboard.pasteText };
@@ -87,34 +87,37 @@ export function StreamPanel({
       style={{
         flex: 1,
         minWidth: 0,
-        display: 'flex',
-        flexDirection: 'column',
+        display: "flex",
+        flexDirection: "column",
         padding: 40,
-        boxSizing: 'border-box',
+        boxSizing: "border-box",
         backgroundColor: bg.subtle,
-        borderLeft: framed ? `1px solid ${border.default}` : 'none',
-        borderRight: framed ? `1px solid ${border.default}` : 'none',
-        overflow: 'hidden',
-      }}>
+        borderLeft: framed ? `1px solid ${border.default}` : "none",
+        borderRight: framed ? `1px solid ${border.default}` : "none",
+        overflow: "hidden",
+      }}
+    >
       <div
         data-testid="device-frame-viewport"
         style={{
           flex: 1,
           minWidth: 0,
           minHeight: 0,
-          width: '100%',
-          boxSizing: 'border-box',
+          width: "100%",
+          boxSizing: "border-box",
           // Container-query units resolve against the content box, so this
           // padding keeps the frame clear of the title above and toolbar below.
           padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${controlsHeight + CONTROLS_GAP}px`,
-          containerType: 'size',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
+          containerType: "size",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <div
           data-testid="device-frame-anchor"
-          style={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
+          style={{ position: "relative", display: "flex", flexShrink: 0 }}
+        >
           <PhoneFrame
             device={device}
             client={screenClient}
@@ -129,39 +132,46 @@ export function StreamPanel({
           />
           <div
             style={{
-              position: 'absolute',
-              left: '50%',
+              position: "absolute",
+              left: "50%",
               bottom: `calc(100% + ${TITLE_GAP}px)`,
-              display: 'flex',
-              justifyContent: 'center',
-              width: 'max-content',
+              display: "flex",
+              justifyContent: "center",
+              width: "max-content",
               // Bound by the panel, not the frame: `cqw` resolves against the
               // viewport container, so long names keep the panel's width.
-              maxWidth: '100cqw',
-              transform: 'translateX(-50%)',
-            }}>
-            <DeviceTitle key={device.id} device={device} status={client.status} recording={client.screenRecording} />
+              maxWidth: "100cqw",
+              transform: "translateX(-50%)",
+            }}
+          >
+            <DeviceTitle
+              key={device.id}
+              device={device}
+              status={client.status}
+              recording={client.screenRecording}
+            />
           </div>
           <div
             ref={controlsRef}
             style={{
-              position: 'absolute',
-              left: '50%',
+              position: "absolute",
+              left: "50%",
               top: `calc(100% + ${CONTROLS_GAP}px)`,
-              width: 'max-content',
-              maxWidth: '100cqw',
-              transform: 'translateX(-50%)',
-            }}>
+              width: "max-content",
+              maxWidth: "100cqw",
+              transform: "translateX(-50%)",
+            }}
+          >
             <StreamControls
               recording={client.screenRecording}
               appearance={appearance}
               appearanceDisabled={appearanceDisabled}
               onToggleAppearance={() => {
                 if (!appearanceDisabled) {
-                  client.setDeviceSetting('appearance', appearance === 'dark' ? 'light' : 'dark');
+                  client.setDeviceSetting("appearance", appearance === "dark" ? "light" : "dark");
                 }
               }}
-              onHome={() => client.pressButton('home')}
+              onHome={() => client.pressButton("home")}
               onReload={() => client.reload()}
               onRotate={() => client.rotate()}
               onSave={captureScreenshot}

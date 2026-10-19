@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { spawn } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { spawn } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // The CLI imports its server bundle as the sibling `./index.mjs`. This stub stands in for it, so the
 // tests run the real signal handler without simulators or emulators. serve-sim's release takes
@@ -26,24 +26,27 @@ export const shutdownServeSim = async () => {
 let directory: string;
 
 beforeAll(async () => {
-  directory = await mkdtemp(join(tmpdir(), 'hub-cli-shutdown-'));
+  directory = await mkdtemp(join(tmpdir(), "hub-cli-shutdown-"));
   const build = await Bun.build({
-    entrypoints: [join(import.meta.dir, '../cli.ts')],
+    entrypoints: [join(import.meta.dir, "../cli.ts")],
     outdir: directory,
-    naming: '[name].mjs',
-    target: 'node',
-    format: 'esm',
+    naming: "[name].mjs",
+    target: "node",
+    format: "esm",
     plugins: [
       {
-        name: 'externalize-plugin-server',
+        name: "externalize-plugin-server",
         setup(build) {
-          build.onResolve({ filter: /^\.\/index\.mjs$/ }, (args) => ({ path: args.path, external: true }));
+          build.onResolve({ filter: /^\.\/index\.mjs$/ }, (args) => ({
+            path: args.path,
+            external: true,
+          }));
         },
       },
     ],
   });
-  expect(build.success, build.logs.join('\n')).toBe(true);
-  await writeFile(join(directory, 'index.mjs'), STUB_SERVER);
+  expect(build.success, build.logs.join("\n")).toBe(true);
+  await writeFile(join(directory, "index.mjs"), STUB_SERVER);
 });
 
 afterAll(async () => {
@@ -51,26 +54,28 @@ afterAll(async () => {
 });
 
 /** Starts the built CLI under Node, sends SIGINT once it is ready, and waits for it to exit. */
-function interruptWhenReady(env: Record<string, string>): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  const child = spawn('node', [join(directory, 'cli.mjs'), '--port', '0'], {
+function interruptWhenReady(
+  env: Record<string, string>,
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const child = spawn("node", [join(directory, "cli.mjs"), "--port", "0"], {
     env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  let stdout = '';
-  let stderr = '';
+  let stdout = "";
+  let stderr = "";
   let signalled = false;
-  child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
-  child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
     stdout += chunk;
-    if (!signalled && stdout.includes('Expo Device Hub ready')) {
+    if (!signalled && stdout.includes("Expo Device Hub ready")) {
       signalled = true;
-      child.kill('SIGINT');
+      child.kill("SIGINT");
     }
   });
-  const timeout = setTimeout(() => child.kill('SIGKILL'), 10_000);
+  const timeout = setTimeout(() => child.kill("SIGKILL"), 10_000);
   return new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('close', (code) => {
+    child.once("error", reject);
+    child.once("close", (code) => {
       clearTimeout(timeout);
       if (!signalled) reject(new Error(`The CLI exited before it was ready:\n${stdout}${stderr}`));
       else resolve({ code, stdout, stderr });
@@ -78,28 +83,32 @@ function interruptWhenReady(env: Record<string, string>): Promise<{ code: number
   });
 }
 
-describe('Hub CLI shutdown', () => {
+describe("Hub CLI shutdown", () => {
   test("waits for serve-sim's clipboard release, then exits 0", async () => {
     const result = await interruptWhenReady({});
 
     expect(result.code, result.stderr).toBe(0);
-    expect(result.stdout).toContain('Android stopped');
-    expect(result.stdout).toContain('serve-sim stopped');
+    expect(result.stdout).toContain("Android stopped");
+    expect(result.stdout).toContain("serve-sim stopped");
   }, 15_000);
 
   test("logs a failed serve-sim release and still exits 0", async () => {
-    const result = await interruptWhenReady({ STUB_SERVE_SIM: 'reject' });
+    const result = await interruptWhenReady({ STUB_SERVE_SIM: "reject" });
 
     expect(result.code, result.stderr).toBe(0);
-    expect(result.stderr).toContain('serve-sim shutdown failed: Error: serve-sim failed on purpose');
-    expect(result.stdout).toContain('Android stopped');
+    expect(result.stderr).toContain(
+      "serve-sim shutdown failed: Error: serve-sim failed on purpose",
+    );
+    expect(result.stdout).toContain("Android stopped");
   }, 15_000);
 
-  test('still releases serve-sim when Android recording fails to stop', async () => {
-    const result = await interruptWhenReady({ STUB_ANDROID: 'reject' });
+  test("still releases serve-sim when Android recording fails to stop", async () => {
+    const result = await interruptWhenReady({ STUB_ANDROID: "reject" });
 
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('Android recording shutdown failed: Error: Android failed on purpose');
-    expect(result.stdout).toContain('serve-sim stopped');
+    expect(result.stderr).toContain(
+      "Android recording shutdown failed: Error: Android failed on purpose",
+    );
+    expect(result.stdout).toContain("serve-sim stopped");
   }, 15_000);
 });

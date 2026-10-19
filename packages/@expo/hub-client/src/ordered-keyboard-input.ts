@@ -10,16 +10,16 @@ import {
   WS_MSG_INPUT_BARRIER_DONE,
   WS_MSG_PASTE,
   WS_MSG_PASTE_DONE,
-} from './input-protocol';
-import { ClipboardActionError } from './device-clipboard';
-import { createPacedKeySender } from './paced-key-sender';
-import { type HidKeyEvent } from './types';
-import { encodeWsMessage } from './ws-send-queue';
+} from "./input-protocol";
+import { ClipboardActionError } from "./device-clipboard";
+import { createPacedKeySender } from "./paced-key-sender";
+import { type HidKeyEvent } from "./types";
+import { encodeWsMessage } from "./ws-send-queue";
 
-export type KeyMessage = { type: 'down' | 'up'; usage: number; key?: string; shifted?: boolean };
+export type KeyMessage = { type: "down" | "up"; usage: number; key?: string; shifted?: boolean };
 export type ClipboardReply = { cleanupWarning?: string };
 
-export const INPUT_DISCONNECTED_MESSAGE = 'Device input disconnected. Try again.';
+export const INPUT_DISCONNECTED_MESSAGE = "Device input disconnected. Try again.";
 
 type Request = {
   requestId: number;
@@ -27,27 +27,27 @@ type Request = {
   reject(error: Error): void;
 };
 type PasteRequest = Request & {
-  kind: 'paste';
+  kind: "paste";
   frame: Uint8Array<ArrayBuffer>;
   resolve(reply: ClipboardReply): void;
 };
 type ReadRequest = Request & {
-  kind: 'read';
+  kind: "read";
   read(signal: AbortSignal): Promise<unknown>;
   resolve(value: unknown): void;
   /** Set once the barrier is acknowledged and the read has started. */
   controller?: AbortController;
 };
 type Input =
-  | { kind: 'key'; message: KeyMessage }
-  | { kind: 'keys'; events: HidKeyEvent[] }
+  | { kind: "key"; message: KeyMessage }
+  | { kind: "keys"; events: HidKeyEvent[] }
   | PasteRequest
   | ReadRequest;
 
 const decoder = new TextDecoder();
 
 // @ref LLP 0013#clipboard — keys wait for an earlier Paste's reply; Copy reads only after a barrier
-/** One per input socket. Requests are sent only on an admitted socket and never replayed. */
+/** One per input owner. Clipboard requests need an admitted socket and are never replayed. */
 export function createOrderedKeyboardInput({
   sendKey,
   trySendFrame,
@@ -63,7 +63,10 @@ export function createOrderedKeyboardInput({
   let active: Input | null = null;
   let nextRequestId = 0;
   let disposed = false;
-  const pacedKeys = createPacedKeySender((event) => sendKey({ type: event.type, usage: event.usage }), keyPaceMs);
+  const pacedKeys = createPacedKeySender(
+    (event) => sendKey({ type: event.type, usage: event.usage }),
+    keyPaceMs,
+  );
   const disconnected = () => new Error(INPUT_DISCONNECTED_MESSAGE);
 
   const finish = (request: PasteRequest | ReadRequest, settle: () => void) => {
@@ -77,12 +80,12 @@ export function createOrderedKeyboardInput({
   const drain = () => {
     while (!active && queue.length > 0 && !disposed) {
       const input = queue.shift()!;
-      if (input.kind === 'key') {
+      if (input.kind === "key") {
         sendKey(input.message);
         continue;
       }
       active = input;
-      if (input.kind === 'keys') {
+      if (input.kind === "keys") {
         pacedKeys.enqueue(input.events);
         void pacedKeys.idle().then(() => {
           if (active !== input) return;
@@ -91,18 +94,25 @@ export function createOrderedKeyboardInput({
         });
         continue;
       }
-      const frame = input.kind === 'paste'
-        ? input.frame
-        : encodeWsMessage(WS_MSG_INPUT_BARRIER, { requestId: input.requestId });
+      const frame =
+        input.kind === "paste"
+          ? input.frame
+          : encodeWsMessage(WS_MSG_INPUT_BARRIER, { requestId: input.requestId });
       if (!trySendFrame(frame)) {
         active = null;
         input.reject(disconnected());
         continue;
       }
-      input.timer = setTimeout(() => finish(input, () => {
-        if (input.kind === 'read') input.controller?.abort();
-        input.reject(new Error(input.kind === 'paste' ? 'Paste timed out.' : 'Copy timed out.'));
-      }), replyTimeoutMs);
+      input.timer = setTimeout(
+        () =>
+          finish(input, () => {
+            if (input.kind === "read") input.controller?.abort();
+            input.reject(
+              new Error(input.kind === "paste" ? "Paste timed out." : "Copy timed out."),
+            );
+          }),
+        replyTimeoutMs,
+      );
     }
   };
 
@@ -113,9 +123,9 @@ export function createOrderedKeyboardInput({
 
   const rejectRequests = (inputs: Input[]) => {
     for (const input of inputs) {
-      if (input.kind !== 'paste' && input.kind !== 'read') continue;
+      if (input.kind !== "paste" && input.kind !== "read") continue;
       clearTimeout(input.timer);
-      if (input.kind === 'read') input.controller?.abort();
+      if (input.kind === "read") input.controller?.abort();
       input.reject(disconnected());
     }
   };
@@ -130,10 +140,10 @@ export function createOrderedKeyboardInput({
 
   return {
     send(message: KeyMessage): void {
-      if (!disposed) enqueue({ kind: 'key', message });
+      if (!disposed) enqueue({ kind: "key", message });
     },
     enqueue(events: ReadonlyArray<HidKeyEvent>): void {
-      if (!disposed && events.length > 0) enqueue({ kind: 'keys', events: [...events] });
+      if (!disposed && events.length > 0) enqueue({ kind: "keys", events: [...events] });
     },
     /** Without text, the device pastes its own clipboard. */
     paste(text?: string): Promise<ClipboardReply> {
@@ -141,45 +151,67 @@ export function createOrderedKeyboardInput({
       const requestId = ++nextRequestId;
       const frame = encodeWsMessage(WS_MSG_PASTE, { requestId, text });
       if (frame.byteLength > MAX_INPUT_FRAME_BYTES) {
-        return Promise.reject(new Error('This text is too large to paste. The limit is 4 MiB.'));
+        return Promise.reject(new Error("This text is too large to paste. The limit is 4 MiB."));
       }
       return new Promise((resolve, reject) =>
-        enqueue({ kind: 'paste', requestId, frame, resolve, reject }));
+        enqueue({ kind: "paste", requestId, frame, resolve, reject }),
+      );
     },
     /** Run `read` once the server has handled all earlier input. Keys typed meanwhile wait for it. */
     readAfterInput<T>(read: (signal: AbortSignal) => Promise<T>): Promise<T> {
       if (disposed) return Promise.reject(disconnected());
-      return new Promise<T>((resolve, reject) => enqueue({
-        kind: 'read', requestId: ++nextRequestId, read,
-        resolve: (value) => resolve(value as T), reject,
-      }));
+      return new Promise<T>((resolve, reject) =>
+        enqueue({
+          kind: "read",
+          requestId: ++nextRequestId,
+          read,
+          resolve: (value) => resolve(value as T),
+          reject,
+        }),
+      );
     },
     /** Handle a `0x91` or `0x92` reply. Returns false for any other frame. */
     receive(data: ArrayBuffer): boolean {
       const bytes = new Uint8Array(data);
-      const kind = bytes[0] === WS_MSG_PASTE_DONE ? 'paste' : bytes[0] === WS_MSG_INPUT_BARRIER_DONE ? 'read' : null;
+      const kind =
+        bytes[0] === WS_MSG_PASTE_DONE
+          ? "paste"
+          : bytes[0] === WS_MSG_INPUT_BARRIER_DONE
+            ? "read"
+            : null;
       if (!kind) return false;
       let reply: { requestId?: unknown; ok?: unknown; error?: unknown; cleanupWarning?: unknown };
-      try { reply = JSON.parse(decoder.decode(bytes.subarray(1))) ?? {}; } catch { return true; }
+      try {
+        reply = JSON.parse(decoder.decode(bytes.subarray(1))) ?? {};
+      } catch {
+        return true;
+      }
       const request = active;
       if (request?.kind !== kind) return true;
-      if (reply.requestId !== request.requestId || typeof reply.ok !== 'boolean') return true;
-      if (request.kind === 'read' && request.controller) return true;
-      const cleanupWarning = typeof reply.cleanupWarning === 'string' ? reply.cleanupWarning : undefined;
+      if (reply.requestId !== request.requestId || typeof reply.ok !== "boolean") return true;
+      if (request.kind === "read" && request.controller) return true;
+      const cleanupWarning =
+        typeof reply.cleanupWarning === "string" ? reply.cleanupWarning : undefined;
       if (!reply.ok) {
-        const error = typeof reply.error === 'string'
-          ? reply.error
-          : request.kind === 'paste' ? 'Could not paste into the simulator.' : 'Simulator input failed. Reconnect and try again.';
+        const error =
+          typeof reply.error === "string"
+            ? reply.error
+            : request.kind === "paste"
+              ? "Could not paste into the simulator."
+              : "Simulator input failed. Reconnect and try again.";
         // serve-sim does not send a warning with a failed Paste today. Keep one if it comes.
         finish(request, () => request.reject(new ClipboardActionError(error, cleanupWarning)));
-      } else if (request.kind === 'paste') {
+      } else if (request.kind === "paste") {
         finish(request, () => request.resolve(cleanupWarning ? { cleanupWarning } : {}));
       } else {
         const controller = new AbortController();
         request.controller = controller;
         new Promise<unknown>((resolve) => resolve(request.read(controller.signal))).then(
           (value) => finish(request, () => request.resolve(value)),
-          (error) => finish(request, () => request.reject(error instanceof Error ? error : new Error(String(error)))),
+          (error) =>
+            finish(request, () =>
+              request.reject(error instanceof Error ? error : new Error(String(error))),
+            ),
         );
       }
       return true;
@@ -190,12 +222,22 @@ export function createOrderedKeyboardInput({
      */
     cancelKeys(release: (event: HidKeyEvent) => void): void {
       for (const event of pacedKeys.cancel()) release(event);
-      if (active?.kind === 'keys') active = null;
+      if (active?.kind === "keys") active = null;
       for (let index = queue.length - 1; index >= 0; index--) {
         const input = queue[index]!;
-        if (input.kind === 'keys' || (input.kind === 'key' && input.message.type === 'down')) queue.splice(index, 1);
+        if (input.kind === "keys" || (input.kind === "key" && input.message.type === "down"))
+          queue.splice(index, 1);
       }
       drain();
+    },
+    /** Retire uncertain clipboard work on transport loss; ordinary typing keeps its owner queue. */
+    cancelRequests(): void {
+      if (
+        active?.kind === "paste" ||
+        active?.kind === "read" ||
+        queue.some((input) => input.kind === "paste" || input.kind === "read")
+      )
+        cancel();
     },
     /** The socket disconnected: requests without a reply fail, and keys behind them are dropped. */
     cancel,

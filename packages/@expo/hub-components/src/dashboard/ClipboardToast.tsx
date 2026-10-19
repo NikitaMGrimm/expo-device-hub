@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
-import { Toaster, toast as sonnerToast } from 'sonner';
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { Toaster, toast as sonnerToast } from "sonner";
 
-import { type DeviceClient, type DeviceClipboardAction } from '@expo/hub-client';
-import { ClipboardPasteIcon, CopyIcon, bg, icon, radius, text, textSize } from '../primitives';
-import { errorMessage, readBrowserClipboard, writeBrowserClipboard } from './browserClipboard';
-import { TOAST_PILL_STYLE } from './ScreenshotToast';
+import { type DeviceClient, type DeviceClipboardAction } from "@expo/hub-client";
+import { ClipboardPasteIcon, CopyIcon, bg, icon, radius, text, textSize } from "../primitives";
+import { errorMessage, readBrowserClipboard, writeBrowserClipboard } from "./browserClipboard";
+import { TOAST_PILL_STYLE } from "./ScreenshotToast";
 
-const CLIPBOARD_TOASTER_ID = 'hub-clipboard';
+const CLIPBOARD_TOASTER_ID = "hub-clipboard";
 
 /** Clipboard feedback stays centered over the device without intercepting its input. */
 export function ClipboardToaster() {
@@ -15,17 +15,17 @@ export function ClipboardToaster() {
       id={CLIPBOARD_TOASTER_ID}
       position="bottom-center"
       style={{
-        position: 'absolute',
-        pointerEvents: 'none',
-        left: '50%',
-        right: 'auto',
+        position: "absolute",
+        pointerEvents: "none",
+        left: "50%",
+        right: "auto",
         bottom: 16,
-        width: 'min(320px, calc(100cqw - 32px))',
-        transform: 'translateX(-50%)',
+        width: "min(320px, calc(100cqw - 32px))",
+        transform: "translateX(-50%)",
       }}
       gap={8}
-      toastOptions={{ unstyled: true, style: { width: '100%' } }}
-      hotkey={[' ']}
+      toastOptions={{ unstyled: true, style: { width: "100%" } }}
+      hotkey={[" "]}
       containerAriaLabel="Clipboard notifications"
     />
   );
@@ -38,7 +38,7 @@ export function ClipboardToaster() {
  */
 export type ClipboardToastState = {
   action: DeviceClipboardAction;
-  status: 'pending' | 'success' | 'info' | 'manual' | 'error';
+  status: "pending" | "success" | "info" | "manual" | "error";
   message: string;
 };
 
@@ -46,28 +46,29 @@ export type ClipboardToastState = {
  * A toolbar Paste or Copy that the browser clipboard stopped, for the inspector's Clipboard
  * section to finish.
  */
-export type ClipboardRequest = { action: 'paste' } | { action: 'copy'; text: string };
+export type ClipboardRequest = { action: "paste" } | { action: "copy"; text: string };
 
 export const HARDWARE_KEYBOARD_NOTE =
-  'If Paste or Copy does not reach the app, try turning on the hardware keyboard in Device options.';
+  "If Paste or Copy does not reach the app, try turning on the hardware keyboard in Device options.";
 
 /**
  * The texts of serve-sim's preview, for the toasts and the Clipboard section. serve-sim has a paste
  * field and a Copy button in its toast; the two `InSection` texts point to the section instead.
  */
 export const CLIPBOARD_TEXT = {
-  pasting: 'Pasting into the simulator…',
-  pasted: 'Pasted into simulator',
-  pasteFailed: 'Could not write to the simulator clipboard',
-  pasteHere: 'Paste here to send it to the simulator',
-  pasteInSection: 'Paste in the Clipboard section to send it to the simulator',
-  deviceEmpty: 'Device clipboard is empty',
-  copying: 'Reading simulator clipboard…',
-  copied: 'Copied from simulator',
-  copyFailed: 'Copy failed',
-  copyInSection: 'Ready — one click to copy in the Clipboard section',
-  simulatorEmpty: 'Simulator clipboard is empty',
-  simulatorEmptyNotWritten: 'Simulator clipboard is empty. The browser clipboard still has older text',
+  pasting: "Pasting into the simulator…",
+  pasted: "Pasted into simulator",
+  pasteFailed: "Could not write to the simulator clipboard",
+  pasteHere: "Paste here to send it to the simulator",
+  pasteInSection: "Paste in the Clipboard section to send it to the simulator",
+  deviceEmpty: "Device clipboard is empty",
+  copying: "Reading simulator clipboard…",
+  copied: "Copied from simulator",
+  copyFailed: "Copy failed",
+  copyInSection: "Ready — one click to copy in the Clipboard section",
+  simulatorEmpty: "Simulator clipboard is empty",
+  simulatorEmptyNotWritten:
+    "Simulator clipboard is empty. The browser clipboard still has older text",
 } as const;
 
 // Keep success brief; errors and manual instructions need longer to read.
@@ -76,14 +77,14 @@ const DISMISS_MS = 3000;
 const MANUAL_DISMISS_MS = 12_000;
 
 const TOAST_IDS: Record<DeviceClipboardAction, string> = {
-  paste: 'hub-clipboard-paste',
-  copy: 'hub-clipboard-copy',
+  paste: "hub-clipboard-paste",
+  copy: "hub-clipboard-copy",
 };
-const WARNING_TOAST_ID = 'hub-clipboard-warning';
+const WARNING_TOAST_ID = "hub-clipboard-warning";
 
 const PENDING: Record<DeviceClipboardAction, ClipboardToastState> = {
-  paste: { action: 'paste', status: 'pending', message: CLIPBOARD_TEXT.pasting },
-  copy: { action: 'copy', status: 'pending', message: CLIPBOARD_TEXT.copying },
+  paste: { action: "paste", status: "pending", message: CLIPBOARD_TEXT.pasting },
+  copy: { action: "copy", status: "pending", message: CLIPBOARD_TEXT.copying },
 };
 
 function show(id: string, toast: ClipboardToastState, duration: number) {
@@ -98,18 +99,23 @@ function showResult(toast: ClipboardToastState) {
   show(
     TOAST_IDS[toast.action],
     toast,
-    toast.status === 'success'
+    toast.status === "success"
       ? SUCCESS_DISMISS_MS
-      : toast.status === 'info' || toast.status === 'manual' ? MANUAL_DISMISS_MS : DISMISS_MS,
+      : toast.status === "info" || toast.status === "manual"
+        ? MANUAL_DISMISS_MS
+        : DISMISS_MS,
   );
 }
 
 /** The error of a Paste or Copy in the device, with serve-sim's text when the error has none. */
-export function clipboardErrorToast(action: DeviceClipboardAction, error: string): ClipboardToastState {
+export function clipboardErrorToast(
+  action: DeviceClipboardAction,
+  error: string,
+): ClipboardToastState {
   return {
     action,
-    status: 'error',
-    message: error || (action === 'paste' ? CLIPBOARD_TEXT.pasteFailed : CLIPBOARD_TEXT.copyFailed),
+    status: "error",
+    message: error || (action === "paste" ? CLIPBOARD_TEXT.pasteFailed : CLIPBOARD_TEXT.copyFailed),
   };
 }
 
@@ -158,14 +164,14 @@ export function useClipboardToast(
       const owned = claim.current;
       if (owned && !owned.started && (pending === null || owned.action === pending)) {
         owned.started = true;
-      } else if (pending === 'paste') {
+      } else if (pending === "paste") {
         // Every new Paste is a new action, also while an older Paste is in flight. As serve-sim's
         // Command+V, it cancels a toolbar Paste and removes its toast.
         pasteGeneration.current++;
         sonnerToast.dismiss(TOAST_IDS.paste);
       }
       if (!pending && warning && action) {
-        show(WARNING_TOAST_ID, { action, status: 'error', message: warning }, DISMISS_MS);
+        show(WARNING_TOAST_ID, { action, status: "error", message: warning }, DISMISS_MS);
       }
       return;
     }
@@ -174,7 +180,11 @@ export function useClipboardToast(
     if (pending || !previous.pending || previous.startedFor !== deviceId) return;
     // serve-sim shows a key that it could not release as an error toast of its own.
     if (warning) {
-      show(WARNING_TOAST_ID, { action: previous.pending, status: 'error', message: warning }, DISMISS_MS);
+      show(
+        WARNING_TOAST_ID,
+        { action: previous.pending, status: "error", message: warning },
+        DISMISS_MS,
+      );
     }
   }, [deviceId, actionId, action, pending, warning]);
 
@@ -204,19 +214,20 @@ export function useClipboardToast(
   // and only an error shows, as for serve-sim's Command+V fallback.
   const pasteForGeneration = useCallback(
     async (value: string | undefined, generation: number) => {
-      const current = () => generation === pasteGeneration.current && latest.current.deviceId === deviceId;
+      const current = () =>
+        generation === pasteGeneration.current && latest.current.deviceId === deviceId;
       if (!current()) return;
       if (value) show(TOAST_IDS.paste, PENDING.paste, Infinity);
       else sonnerToast.dismiss(TOAST_IDS.paste);
       const target = latest.current.client;
       try {
-        await run('paste', () => target.pasteText(value));
+        await run("paste", () => target.pasteText(value));
       } catch (reason) {
-        if (current()) showResult(clipboardErrorToast('paste', errorMessage(reason)));
+        if (current()) showResult(clipboardErrorToast("paste", errorMessage(reason)));
         throw reason;
       }
       if (value && current()) {
-        showResult({ action: 'paste', status: 'success', message: CLIPBOARD_TEXT.pasted });
+        showResult({ action: "paste", status: "success", message: CLIPBOARD_TEXT.pasted });
       }
     },
     [run, deviceId],
@@ -230,23 +241,24 @@ export function useClipboardToast(
 
   const pasteFromDevice = useCallback(async () => {
     const generation = ++pasteGeneration.current;
-    const current = () => generation === pasteGeneration.current && latest.current.deviceId === deviceId;
+    const current = () =>
+      generation === pasteGeneration.current && latest.current.deviceId === deviceId;
     let value: string;
     try {
       value = await readBrowserClipboard();
     } catch {
       if (!current()) return;
       showResult({
-        action: 'paste',
-        status: 'info',
+        action: "paste",
+        status: "info",
         message: CLIPBOARD_TEXT.pasteInSection,
       });
-      latest.current.onFallback?.({ action: 'paste' });
+      latest.current.onFallback?.({ action: "paste" });
       return;
     }
     if (!current()) return;
     if (!value) {
-      showResult({ action: 'paste', status: 'success', message: CLIPBOARD_TEXT.deviceEmpty });
+      showResult({ action: "paste", status: "success", message: CLIPBOARD_TEXT.deviceEmpty });
       return;
     }
     // As in serve-sim, the Paste shows in flight once the browser clipboard is read.
@@ -255,39 +267,46 @@ export function useClipboardToast(
 
   const copyFromSimulator = useCallback(async () => {
     const generation = ++copyGeneration.current;
-    const current = () => generation === copyGeneration.current && latest.current.deviceId === deviceId;
+    const current = () =>
+      generation === copyGeneration.current && latest.current.deviceId === deviceId;
     show(TOAST_IDS.copy, PENDING.copy, Infinity);
     const target = latest.current.client;
     let value: string;
     try {
-      value = await run('copy', () => target.copyText());
+      value = await run("copy", () => target.copyText());
     } catch (reason) {
-      if (current()) showResult(clipboardErrorToast('copy', errorMessage(reason)));
+      if (current()) showResult(clipboardErrorToast("copy", errorMessage(reason)));
       return;
     }
     if (!current()) return;
     try {
       // A browser write cannot be cancelled; serialize it so an older write cannot finish last.
-      const write = copyWrites.current.catch(() => {}).then(() => {
-        if (current()) return writeBrowserClipboard(value);
-      });
+      const write = copyWrites.current
+        .catch(() => {})
+        .then(() => {
+          if (current()) return writeBrowserClipboard(value);
+        });
       copyWrites.current = write;
       await write;
     } catch {
       if (!current()) return;
       if (!value) {
-        showResult({ action: 'copy', status: 'error', message: CLIPBOARD_TEXT.simulatorEmptyNotWritten });
+        showResult({
+          action: "copy",
+          status: "error",
+          message: CLIPBOARD_TEXT.simulatorEmptyNotWritten,
+        });
         return;
       }
       // serve-sim offers a one-click Copy in the toast; here the Clipboard section has it.
-      showResult({ action: 'copy', status: 'manual', message: CLIPBOARD_TEXT.copyInSection });
-      latest.current.onFallback?.({ action: 'copy', text: value });
+      showResult({ action: "copy", status: "manual", message: CLIPBOARD_TEXT.copyInSection });
+      latest.current.onFallback?.({ action: "copy", text: value });
       return;
     }
     if (!current()) return;
     showResult({
-      action: 'copy',
-      status: 'success',
+      action: "copy",
+      status: "success",
       message: value ? CLIPBOARD_TEXT.copied : CLIPBOARD_TEXT.simulatorEmpty,
     });
   }, [run, deviceId]);
@@ -297,7 +316,7 @@ export function useClipboardToast(
 
 // serve-sim's status dot colors: blue while in flight or for a next step, green for a result,
 // amber when the user must finish, red for an error.
-const STATUS_ICON_COLOR: Record<ClipboardToastState['status'], string> = {
+const STATUS_ICON_COLOR: Record<ClipboardToastState["status"], string> = {
   pending: icon.info,
   info: icon.info,
   success: icon.success,
@@ -307,7 +326,7 @@ const STATUS_ICON_COLOR: Record<ClipboardToastState['status'], string> = {
 
 /** The pill that reports one clipboard action: its icon in the status color, and its message. */
 export function ClipboardToast({ toast }: { toast: ClipboardToastState }) {
-  const Icon = toast.action === 'paste' ? ClipboardPasteIcon : CopyIcon;
+  const Icon = toast.action === "paste" ? ClipboardPasteIcon : CopyIcon;
   return (
     <div data-testid="clipboard-toast" data-status={toast.status} style={TOAST_PILL_STYLE}>
       <span
@@ -315,13 +334,14 @@ export function ClipboardToast({ toast }: { toast: ClipboardToastState }) {
           width: 36,
           height: 36,
           flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
           borderRadius: radius.md,
           backgroundColor: bg.element,
           color: STATUS_ICON_COLOR[toast.status],
-        }}>
+        }}
+      >
         <Icon size={18} />
       </span>
       <span
@@ -330,9 +350,10 @@ export function ClipboardToast({ toast }: { toast: ClipboardToastState }) {
           minWidth: 0,
           lineHeight: 1.3,
           fontWeight: 600,
-          overflowWrap: 'anywhere',
-          color: toast.status === 'error' ? text.danger : text.default,
-        }}>
+          overflowWrap: "anywhere",
+          color: toast.status === "error" ? text.danger : text.default,
+        }}
+      >
         {toast.message}
       </span>
     </div>
