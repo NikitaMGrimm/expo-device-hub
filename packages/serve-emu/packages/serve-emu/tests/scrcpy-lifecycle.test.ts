@@ -215,11 +215,7 @@ function createHarness(options: HarnessOptions = {}) {
     state.adbCalls.push(call);
     state.events.push(`adb:${args.join(" ")}`);
 
-    if (
-      args[0] === "shell" &&
-      args[1] === "test" &&
-      (args[2] === "-f" || args[2] === "-s")
-    ) {
+    if (args[0] === "shell" && args[1] === "test" && (args[2] === "-f" || args[2] === "-s")) {
       if (options.deferProbe) {
         probeReached.resolve(call);
         return waitForDeferred(probeDeferred, commandOptions.signal);
@@ -434,9 +430,7 @@ describe("scrcpy async lifecycle", () => {
     const second = await startWith(harness);
     expect(harness.state.pushCount).toBe(1);
     expect(
-      harness.state.adbCalls.filter(
-        (call) => call.args[0] === "shell" && call.args[1] === "test",
-      ),
+      harness.state.adbCalls.filter((call) => call.args[0] === "shell" && call.args[1] === "test"),
     ).toHaveLength(2);
     await second.close();
   });
